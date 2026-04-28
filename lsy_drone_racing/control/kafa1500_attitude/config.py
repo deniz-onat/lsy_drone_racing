@@ -50,31 +50,48 @@ class PathConfig:
 class ReferenceConfig:
     """Closed-loop reference advancement parameters."""
 
-    target_reached_distance: float = 0.30
+    target_reached_distance: float = 0.35
     target_hysteresis: float = 0.05
-    min_ticks_between_advances: int = 1
+    min_ticks_between_advances: int = 0
     start_index: int = 1
-    max_advance_per_step: int = 8
-    nearest_forward_search: int = 14
-    nominal_speed: float = 0.48
-    gate_speed: float = 0.42
+    max_advance_per_step: int = 16
+    nearest_forward_search: int = 6
+    nominal_speed: float = 0.8
+    gate_speed: float = 0.4
     final_speed: float = 0.25
     gate_window_samples: int = 5
+    lookahead_samples: int = 2
 
 
 @dataclass(frozen=True, slots=True)
 class FeedbackConfig:
     """Attitude feedback gains and output limits."""
 
-    kp: NDArray[np.float32] = field(default_factory=lambda: _vec((0.62, 0.62, 1.85)))
-    ki: NDArray[np.float32] = field(default_factory=lambda: _vec((0.035, 0.035, 0.055)))
-    kd: NDArray[np.float32] = field(default_factory=lambda: _vec((0.92, 0.92, 0.72)))
-    integral_limit: NDArray[np.float32] = field(default_factory=lambda: _vec((1.20, 1.20, 0.45)))
-    feedforward_acc_scale: float = 0.35
-    max_feedforward_acc: float = 4.5
-    max_tilt: float = 0.56
-    max_yaw_rate_step: float = 0.10
-    attitude_smoothing: float = 0.28
-    thrust_smoothing: float = 0.22
-    hover_thrust_scale: float = 1.02
+    cx_kp_xy: float = 1.2
+    cx_kp_z: float = 1.2
+    cx_ki_xy: float = 0.04
+    cx_ki_z: float = 0.04
+    cx_kd_xy: float = 1e-6
+    cx_kd_z: float = 1e-6
+    cx_integral_limit: float = 5.0
+    cv_kp_xy: float = 25.0
+    cv_kp_z: float = 25.0
+    cv_ki_xy: float = 0.5
+    cv_ki_z: float = 0.5
+    cv_kd_xy: float = 0.01
+    cv_kd_z: float = 0.01
+    cv_integral_limit: float = 5.0
+    max_v_ref_xy: float = 3.0
+    max_v_ref_z: float = 1.5
+    max_acc_xy: float = 8.0
+    max_acc_z: float = 4.0
+    yaw_kp: float = 3.0
+    yaw_ki: float = 0.15
+    yaw_kd: float = 0.4
+    yaw_integral_limit: float = 15
+    max_tilt: float = 10.05
+    max_yaw_rate_step: float = 5.35
+    attitude_smoothing: float = 0.85
+    thrust_smoothing: float = 0.05
+    hover_thrust_scale: float = 1.0
     gravity: float = 9.81

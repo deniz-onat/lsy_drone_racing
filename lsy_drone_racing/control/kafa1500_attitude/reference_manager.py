@@ -61,11 +61,10 @@ class ReferenceManager:
 
     def hold(self, pos: Vec3) -> Reference:
         """Hold the current position."""
-        zero = np.zeros(3, dtype=np.float32)
         return Reference(
             position=pos.astype(np.float32),
-            velocity=zero,
-            acceleration=zero,
+            roll=0.0,
+            pitch=0.0,
             yaw=self._last_yaw,
             index=self._index,
             distance=0.0,
@@ -83,17 +82,31 @@ class ReferenceManager:
     def _advance_to_nearby_forward_sample(self, pos: Vec3, tick: int) -> None:
         if self._path is None:
             return
-        if tick - self._last_advance_tick < self._config.min_ticks_between_advances:
-            return
-        stop = min(len(self._path.points), self._index + self._config.nearest_forward_search + 1)
+
+        stop = min(
+            len(self._path.points),
+            self._index + self._config.nearest_forward_search + 1,
+        )
+
         candidates = self._path.points[self._index:stop]
         distances = np.linalg.norm(candidates - pos, axis=1)
-        offset = int(np.argmin(distances))
-        if offset <= 0:
+
+        closest_offset = int(np.argmin(distances))
+
+        if closest_offset <= 0:
             return
-        if float(distances[offset]) <= self._config.target_reached_distance:
-            self._index += min(offset, self._config.max_advance_per_step)
-            self._last_advance_tick = tick
+
+        advance = min(
+            closest_offset + self._config.lookahead_samples,
+            self._config.max_advance_per_step,
+            len(self._path.points) - 1 - self._index,
+        )
+
+        if advance <= 0:
+            return
+
+        self._index += advance
+        self._last_advance_tick = tick
 
     def _reference(self, index: int, distance: float) -> Reference:
         if self._path is None:
@@ -102,42 +115,15 @@ class ReferenceManager:
         param = float(self._path.params[index])
         position = np.asarray(self._path.spline(param), dtype=np.float32)
         tangent = np.asarray(self._path.velocity_spline(param), dtype=np.float32)
-        curvature = np.asarray(self._path.acceleration_spline(param), dtype=np.float32)
-        tangent_norm = float(np.linalg.norm(tangent))
-        speed = self._speed_for_index(index)
-
-        if tangent_norm < 1e-6:
-            velocity = np.zeros(3, dtype=np.float32)
-            acceleration = np.zeros(3, dtype=np.float32)
-        else:
-            ds_dt = speed / tangent_norm
-            velocity = (tangent * ds_dt).astype(np.float32)
-            acceleration = (curvature * ds_dt**2).astype(np.float32)
-            if float(np.linalg.norm(tangent[:2])) > 1e-6:
-                self._last_yaw = float(np.arctan2(tangent[1], tangent[0]))
+        if float(np.linalg.norm(tangent[:2])) > 1e-6:
+            self._last_yaw = float(np.arctan2(tangent[1], tangent[0]))
 
         return Reference(
             position=position,
-            velocity=velocity,
-            acceleration=acceleration,
+            roll=0.0,
+            pitch=0.0,
             yaw=self._last_yaw,
             index=index,
             distance=distance,
             done=index >= len(self._path.points) - 1,
         )
-
-    def _speed_for_index(self, index: int) -> float:
-        if self._path is None:
-            return 0.0
-        if index >= len(self._path.points) - 1:
-            return self._config.final_speed
-        gate_id = int(self._path.gate_indices[index])
-        if gate_id >= 0:
-            gate_window = self._path.gate_indices[
-                max(0, index - self._config.gate_window_samples) : index
-                + self._config.gate_window_samples
-                + 1
-            ]
-            if np.any(gate_window == gate_id):
-                return self._config.gate_speed
-        return self._config.nominal_speed

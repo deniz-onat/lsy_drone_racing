@@ -144,11 +144,10 @@ class KaFa1500Attitude(Controller):
     def _takeoff_reference(self, obs: Observation) -> Reference:
         """Hold XY while climbing to a safe height."""
         pos = obs["pos"].astype(np.float32)
-        zero = np.zeros(3, dtype=np.float32)
         return Reference(
             position=self._takeoff_position.copy(),
-            velocity=zero,
-            acceleration=zero,
+            roll=0.0,
+            pitch=0.0,
             yaw=self._yaw0,
             index=0,
             distance=float(np.linalg.norm(pos - self._takeoff_position)),

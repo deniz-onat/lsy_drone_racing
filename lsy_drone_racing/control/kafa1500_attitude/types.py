@@ -56,8 +56,8 @@ class Reference:
     """Active target sampled from the cubic path."""
 
     position: Vec3
-    velocity: Vec3
-    acceleration: Vec3
+    roll: float
+    pitch: float
     yaw: float
     index: int
     distance: float
