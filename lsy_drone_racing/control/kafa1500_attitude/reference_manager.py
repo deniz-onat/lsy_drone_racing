@@ -41,7 +41,7 @@ class ReferenceManager:
         self._last_advance_tick = -self._config.min_ticks_between_advances
         self._last_yaw = yaw
 
-    def update(self, pos: Vec3, tick: int) -> Reference:
+    def update(self, pos: Vec3, vel: Vec3, tick: int) -> Reference:
         """Return the active reference, advancing only when close enough."""
         if self._path is None:
             return self.hold(pos)
@@ -57,12 +57,17 @@ class ReferenceManager:
             self._last_advance_tick = tick
 
         distance = float(np.linalg.norm(pos - self._path.points[self._index]))
-        return self._reference(self._index, distance)
+        speed_now = float(np.linalg.norm(vel))
+        target_index = self._predictive_index(self._index, speed_now)
+        return self._reference(target_index, distance)
 
     def hold(self, pos: Vec3) -> Reference:
         """Hold the current position."""
+        zero = np.zeros(3, dtype=np.float32)
         return Reference(
             position=pos.astype(np.float32),
+            velocity=zero,
+            acceleration=zero,
             roll=0.0,
             pitch=0.0,
             yaw=self._last_yaw,
@@ -115,11 +120,31 @@ class ReferenceManager:
         param = float(self._path.params[index])
         position = np.asarray(self._path.spline(param), dtype=np.float32)
         tangent = np.asarray(self._path.velocity_spline(param), dtype=np.float32)
-        if float(np.linalg.norm(tangent[:2])) > 1e-6:
-            self._last_yaw = float(np.arctan2(tangent[1], tangent[0]))
+        curvature_vec = np.asarray(self._path.acceleration_spline(param), dtype=np.float32)
+        tangent_norm = float(np.linalg.norm(tangent))
+        speed = self._speed_for_index(index)
+        if tangent_norm < 1e-6:
+            velocity = np.zeros(3, dtype=np.float32)
+            acceleration = np.zeros(3, dtype=np.float32)
+        else:
+            ds_dt = speed / tangent_norm
+            velocity = (tangent / tangent_norm * speed).astype(np.float32)
+            acceleration = (curvature_vec * ds_dt**2).astype(np.float32)
+            acceleration = self._clip_horizontal_and_vertical(
+                acceleration,
+                self._config.max_reference_acc_xy,
+                self._config.max_reference_acc_z,
+            )
+        yaw_tangent = self._yaw_tangent(index)
+        if float(np.linalg.norm(yaw_tangent[:2])) > 1e-6:
+            self._last_yaw = float(np.arctan2(yaw_tangent[1], yaw_tangent[0]))
 
         return Reference(
             position=position,
+            velocity=velocity,
+            acceleration=acceleration,
+            # Roll and pitch are placeholders.  AttitudeFeedback normally derives
+            # them from the desired force direction and uses these only as fallback.
             roll=0.0,
             pitch=0.0,
             yaw=self._last_yaw,
@@ -127,3 +152,61 @@ class ReferenceManager:
             distance=distance,
             done=index >= len(self._path.points) - 1,
         )
+
+    def _predictive_index(self, progress_index: int, speed_now: float) -> int:
+        if self._path is None:
+            return progress_index
+        dynamic_lookahead = self._config.base_lookahead_samples + int(
+            self._config.speed_lookahead_gain * speed_now
+        )
+        dynamic_lookahead = min(dynamic_lookahead, self._config.max_lookahead_samples)
+        return min(progress_index + dynamic_lookahead, len(self._path.points) - 1)
+
+    def _yaw_tangent(self, target_index: int) -> Vec3:
+        if self._path is None:
+            return np.zeros(3, dtype=np.float32)
+        yaw_index = min(target_index + self._config.yaw_preview_samples, len(self._path.points) - 1)
+        param = float(self._path.params[yaw_index])
+        return np.asarray(self._path.velocity_spline(param), dtype=np.float32)
+
+    def _speed_for_index(self, index: int) -> float:
+        if self._path is None:
+            return 0.0
+        if index >= len(self._path.points) - 1:
+            return self._config.final_speed
+        base_speed = self._config.nominal_speed
+        gate_id = int(self._path.gate_indices[index])
+        if gate_id >= 0:
+            gate_window = self._path.gate_indices[
+                max(0, index - self._config.gate_window_samples) : index
+                + self._config.gate_window_samples
+                + 1
+            ]
+            if np.any(gate_window == gate_id):
+                base_speed = self._config.gate_speed
+        if self._config.curvature_speed_enabled:
+            base_speed = min(base_speed, self._curvature_speed(index))
+        return float(np.clip(base_speed, self._config.min_turn_speed, self._config.max_turn_speed))
+
+    def _curvature_speed(self, index: int) -> float:
+        if self._path is None:
+            return self._config.nominal_speed
+        param = float(self._path.params[index])
+        tangent = np.asarray(self._path.velocity_spline(param), dtype=np.float32)
+        curvature_vec = np.asarray(self._path.acceleration_spline(param), dtype=np.float32)
+        tangent_norm = float(np.linalg.norm(tangent))
+        curvature = float(
+            np.linalg.norm(np.cross(tangent, curvature_vec)) / (tangent_norm**3 + 1e-6)
+        )
+        if curvature <= 1e-6:
+            return self._config.nominal_speed
+        return float(np.sqrt(self._config.max_lateral_acc / curvature))
+
+    @staticmethod
+    def _clip_horizontal_and_vertical(vec: Vec3, max_xy: float, max_z: float) -> Vec3:
+        clipped = vec.astype(np.float32).copy()
+        xy_norm = float(np.linalg.norm(clipped[:2]))
+        if xy_norm > max_xy and xy_norm > 1e-6:
+            clipped[:2] *= max_xy / xy_norm
+        clipped[2] = float(np.clip(clipped[2], -max_z, max_z))
+        return clipped.astype(np.float32)

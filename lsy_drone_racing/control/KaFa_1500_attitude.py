@@ -76,7 +76,11 @@ class KaFa1500Attitude(Controller):
         if self._should_replan(obs):
             self._replan(obs)
 
-        self._active_reference = self._references.update(obs["pos"].astype(np.float32), self._tick)
+        self._active_reference = self._references.update(
+            obs["pos"].astype(np.float32),
+            obs["vel"].astype(np.float32),
+            self._tick,
+        )
         return self._feedback.command(obs, self._active_reference)
 
     def step_callback(
@@ -123,7 +127,11 @@ class KaFa1500Attitude(Controller):
         path = self._path_builder.build(controls, gate_ids)
         self._target_planner.validate_gate_clearance(path.points, obs)
         self._references.reset(path, yaw=self._yaw_from_obs(obs))
-        self._active_reference = self._references.update(obs["pos"].astype(np.float32), self._tick)
+        self._active_reference = self._references.update(
+            obs["pos"].astype(np.float32),
+            obs["vel"].astype(np.float32),
+            self._tick,
+        )
 
     def _should_replan(self, obs: Observation) -> bool:
         """Replan when the environment reveals new gate/obstacle state or gate index changes."""
@@ -144,8 +152,11 @@ class KaFa1500Attitude(Controller):
     def _takeoff_reference(self, obs: Observation) -> Reference:
         """Hold XY while climbing to a safe height."""
         pos = obs["pos"].astype(np.float32)
+        zero = np.zeros(3, dtype=np.float32)
         return Reference(
             position=self._takeoff_position.copy(),
+            velocity=zero,
+            acceleration=zero,
             roll=0.0,
             pitch=0.0,
             yaw=self._yaw0,

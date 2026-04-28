@@ -24,7 +24,11 @@ class CubicPathBuilder:
         self._config = config
 
     def build(self, controls: NDArray[np.float32], gate_ids: NDArray[np.int32]) -> CubicPath:
-        """Build a strictly cubic path through the supplied controls."""
+        """Build and densely sample a spline from sparse path waypoints."""
+        # Sparse controls are cleaned before fitting; dense samples are produced
+        # afterward for reference tracking.  Spline parameters are cumulative arc
+        # length, which avoids uneven behavior from raw waypoint indices.
+        controls, gate_ids = self._prepare_controls(controls, gate_ids)
         controls = self._ensure_cubic_controls(controls)
         gate_ids = self._ensure_gate_ids(gate_ids, len(controls))
         params = arc_params(controls)
@@ -48,6 +52,31 @@ class CubicPathBuilder:
             lengths=cumulative_lengths(points),
             gate_indices=sample_gate_ids,
         )
+
+    def _prepare_controls(
+        self,
+        controls: NDArray[np.float32],
+        gate_ids: NDArray[np.int32],
+    ) -> tuple[NDArray[np.float32], NDArray[np.int32]]:
+        """Remove consecutive duplicates while preserving gate id alignment."""
+        if len(controls) == 0:
+            return controls.astype(np.float32), gate_ids.astype(np.int32)
+
+        clean_points = [controls[0].astype(np.float32)]
+        clean_ids = [int(gate_ids[0]) if len(gate_ids) else -1]
+        for idx, point in enumerate(controls[1:], start=1):
+            candidate = point.astype(np.float32)
+            gate_id = int(gate_ids[idx]) if idx < len(gate_ids) else clean_ids[-1]
+            if (
+                gate_id < 0
+                and
+                float(np.linalg.norm(candidate - clean_points[-1]))
+                < self._config.min_waypoint_spacing * 0.25
+            ):
+                continue
+            clean_points.append(candidate)
+            clean_ids.append(gate_id)
+        return np.asarray(clean_points, dtype=np.float32), np.asarray(clean_ids, dtype=np.int32)
 
     @staticmethod
     def _ensure_cubic_controls(points: NDArray[np.float32]) -> NDArray[np.float32]:
@@ -87,7 +116,11 @@ class CubicPathBuilder:
         control_gate_ids: NDArray[np.int32],
         sample_params: NDArray[np.float32],
     ) -> NDArray[np.int32]:
-        indices = np.searchsorted(control_params, sample_params, side="right") - 1
-        indices = np.clip(indices, 0, len(control_gate_ids) - 1)
-        return control_gate_ids[indices].astype(np.int32)
+        sample_gate_ids = -np.ones(len(sample_params), dtype=np.int32)
+        for control_param, gate_id in zip(control_params, control_gate_ids, strict=True):
+            if int(gate_id) < 0:
+                continue
+            sample_idx = int(np.argmin(np.abs(sample_params - control_param)))
+            sample_gate_ids[sample_idx] = int(gate_id)
+        return sample_gate_ids
 

@@ -123,11 +123,34 @@ class AttitudeFeedback:
             self._config.max_acc_xy,
             self._config.max_acc_z,
         )
+        ff_acc = np.asarray(
+            getattr(reference, "acceleration", np.zeros(3, dtype=np.float32)),
+            dtype=np.float32,
+        )
+        ff_acc = self._clip_horizontal_and_vertical(
+            ff_acc,
+            self._config.max_feedforward_acc_xy,
+            self._config.max_feedforward_acc_z,
+        )
+        a_des = (
+            a_des + self._config.feedforward_acc_scale * ff_acc
+        ).astype(np.float32)
+        a_des = self._clip_horizontal_and_vertical(
+            a_des,
+            self._config.max_total_acc_xy,
+            self._config.max_total_acc_z,
+        )
 
-        # Keep the working force convention: acceleration command is in world
-        # frame, and positive z gravity compensation produces hover thrust.
-        f_des = (self._mass * a_des).astype(np.float32)
-        f_des[2] += self._mass * self._config.gravity * self._config.hover_thrust_scale
+        # Predictive gravity feedforward: keep the dynamic acceleration limits
+        # on maneuvering acceleration, then add +g before converting to force.
+        # This gives the force-to-attitude step the full acceleration the drone
+        # must produce, including hover support, without clipping gravity away.
+        gravity_ff = np.array(
+            [0.0, 0.0, self._config.gravity * self._config.hover_thrust_scale],
+            dtype=np.float32,
+        )
+        a_des_with_gravity = (a_des + gravity_ff).astype(np.float32)
+        f_des = (self._mass * a_des_with_gravity).astype(np.float32)
 
         r_des_body_to_world = self._desired_rotation(
             f_des,

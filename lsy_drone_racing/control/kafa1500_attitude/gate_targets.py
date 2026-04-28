@@ -1,14 +1,15 @@
-"""Gate-aware safe target generation."""
+"""Gate-ordered sparse waypoint generation."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
 from lsy_drone_racing.control.kafa1500_attitude.types import GateFrame
-from lsy_drone_racing.control.kafa1500_attitude.utils import dedupe, normalize
+from lsy_drone_racing.control.kafa1500_attitude.utils import normalize
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
@@ -17,57 +18,62 @@ if TYPE_CHECKING:
     from lsy_drone_racing.control.kafa1500_attitude.types import Observation, Vec3
 
 
+@dataclass(frozen=True, slots=True)
+class _Waypoint:
+    point: Vec3
+    gate_id: int
+    target_gate: int
+    protected: bool
+
+
+@dataclass(frozen=True, slots=True)
+class _Blocker:
+    center: Vec3
+    radius: float
+    ratio: float
+    is_obstacle: bool
+
+
 class GateTargetPlanner:
-    """Build cubic-spline control points through safe gate apertures."""
+    """Build sparse gate-ordered waypoints before cubic spline fitting."""
 
     def __init__(self, config: PathConfig):
         """Store path configuration."""
         self._config = config
 
     def build_control_points(self, obs: Observation, start_pos: Vec3) -> tuple[NDArray, NDArray]:
-        """Return control points and the corresponding target gate index per point."""
-        target_gate = max(0, int(obs["target_gate"]))
+        """Return sparse controls and gate ids in strict race index order."""
+        n_gates = len(obs["gates_pos"])
+        target_gate = int(np.clip(int(obs["target_gate"]), 0, n_gates))
+        gates = [self.gate_frame(obs, idx) for idx in range(n_gates)]
         obstacles = np.asarray(obs["obstacles_pos"], dtype=np.float32)
-        points: list[Vec3] = [start_pos.astype(np.float32)]
-        protected: list[bool] = [True]
-        gate_ids: list[int] = [-1]
-        cursor = start_pos.astype(np.float32)
 
-        for gate_idx in range(target_gate, len(obs["gates_pos"])):
-            gate = self.gate_frame(obs, gate_idx)
-            pre_distance = self._per_gate(self._config.d_pre_per_gate, gate_idx, self._config.d_pre)
-            post_distance = self._per_gate(
-                self._config.d_post_per_gate, gate_idx, self._config.d_post
+        waypoints: list[_Waypoint] = [
+            _Waypoint(start_pos.astype(np.float32), gate_id=-1, target_gate=target_gate, protected=True)
+        ]
+
+        # Gate local x-axis is the through-gate normal in the current project
+        # convention.  Each gate contributes pre -> center -> post, so the spline
+        # is constrained to cross the gate center approximately perpendicular to
+        # the gate plane.
+        for gate_idx in range(target_gate, n_gates):
+            gate = gates[gate_idx]
+            pre = gate.traversal - self._config.d_pre * gate.forward
+            center = gate.traversal.astype(np.float32)
+            post = gate.traversal + self._config.d_post * gate.forward
+            waypoints.extend(
+                [
+                    _Waypoint(pre.astype(np.float32), -1, gate_idx, True),
+                    _Waypoint(center, gate_idx, gate_idx, True),
+                    _Waypoint(post.astype(np.float32), -1, gate_idx, True),
+                ]
             )
-            pre_gate = gate.traversal - pre_distance * gate.forward
-            post_gate = gate.traversal + post_distance * gate.forward
-            pass_gate = gate.traversal + self._config.d_pass * gate.forward
 
-            approach = self._choose_approach(pre_gate, gate, obstacles)
-            for point in self._route_segment(cursor, approach, obstacles, gate.lateral):
-                points.append(point)
-                protected.append(False)
-                gate_ids.append(gate_idx)
-            points.append(gate.traversal.astype(np.float32))
-            protected.append(True)
-            gate_ids.append(gate_idx)
-
-            exit_cursor = gate.traversal.astype(np.float32)
-            for exit_target in (post_gate, pass_gate):
-                for point in self._route_segment(
-                    exit_cursor, exit_target, obstacles, gate.lateral
-                ):
-                    points.append(point)
-                    protected.append(False)
-                    gate_ids.append(gate_idx)
-                exit_cursor = exit_target.astype(np.float32)
-            cursor = exit_cursor
-
-        controls = dedupe(np.asarray(points, dtype=np.float32), min_distance=0.035)
-        protected_array = self._align_protected_points(points, protected, controls)
-        controls = self._smooth_controls(controls, obstacles, protected_array)
-        gate_ids_array = self._align_gate_ids(points, gate_ids, controls)
-        return controls, gate_ids_array
+        waypoints = self._insert_detours(waypoints, obstacles, gates)
+        waypoints = self._cleanup_waypoints(waypoints)
+        controls = np.asarray([waypoint.point for waypoint in waypoints], dtype=np.float32)
+        gate_ids = np.asarray([waypoint.gate_id for waypoint in waypoints], dtype=np.int32)
+        return controls, gate_ids
 
     def gate_frame(self, obs: Observation, gate_idx: int) -> GateFrame:
         """Extract one gate frame from observations."""
@@ -82,21 +88,13 @@ class GateTargetPlanner:
         safe_half_height = max(
             0.035, 0.5 * self._config.gate_inner_height - self._config.gate_safety_margin
         )
-        vertical_offset = float(
-            np.clip(
-                self._config.vertical_reference_offset,
-                -safe_half_height + 0.025,
-                safe_half_height - 0.025,
-            )
-        )
-        traversal = (position + vertical_offset * up).astype(np.float32)
         return GateFrame(
             index=gate_idx,
             position=position,
             forward=forward,
             lateral=lateral,
             up=up,
-            traversal=traversal,
+            traversal=position.astype(np.float32),
             safe_half_width=float(safe_half_width),
             safe_half_height=float(safe_half_height),
         )
@@ -118,124 +116,255 @@ class GateTargetPlanner:
                 return False
         return True
 
-    def _choose_approach(
-        self, nominal: Vec3, gate: GateFrame, obstacles: NDArray[np.float32]
-    ) -> Vec3:
-        """Shift a pre-gate point laterally when an obstacle blocks the nominal corridor."""
-        offsets = [0.0]
-        for radius in np.linspace(self._config.obstacle_clearance, 0.42, 4):
-            offsets.extend([float(radius), -float(radius)])
-
-        best = nominal.astype(np.float32)
-        best_score = np.inf
-        for offset in offsets:
-            candidate = (nominal + offset * gate.lateral).astype(np.float32)
-            if self._segment_blocked(candidate, gate.traversal, obstacles):
-                continue
-            if not self._point_clear(candidate, obstacles):
-                continue
-            score = abs(offset)
-            if score < best_score:
-                best_score = score
-                best = candidate
-        return best
-
-    def _route_segment(
-        self, start: Vec3, end: Vec3, obstacles: NDArray[np.float32], preferred_lateral: Vec3
-    ) -> list[Vec3]:
-        """Add a few obstacle bypass control points; the final trajectory remains cubic."""
-        cursor = start.astype(np.float32)
-        route: list[Vec3] = []
-        for _ in range(self._config.max_bypass_points):
-            blocker = self._segment_blocker(cursor, end, obstacles)
-            if blocker is None:
+    def _insert_detours(
+        self,
+        waypoints: list[_Waypoint],
+        obstacles: NDArray[np.float32],
+        gates: list[GateFrame],
+    ) -> list[_Waypoint]:
+        """Iteratively insert one detour for blocked waypoint segments."""
+        routed = waypoints[:]
+        for _ in range(self._config.max_detour_iterations):
+            updated: list[_Waypoint] = [routed[0]]
+            changed = False
+            for start, end in zip(routed[:-1], routed[1:], strict=True):
+                blocker = self._first_blocker(start, end, obstacles, gates)
+                if blocker is not None:
+                    for detour in self._detour_points(
+                        start.point,
+                        end.point,
+                        blocker,
+                        obstacles,
+                        gates,
+                        end.target_gate,
+                    ):
+                        updated.append(
+                            _Waypoint(
+                                detour,
+                                gate_id=-1,
+                                target_gate=end.target_gate,
+                                protected=False,
+                            )
+                        )
+                    changed = True
+                updated.append(end)
+            routed = updated
+            if not changed:
                 break
-            bypass = self._bypass(cursor, end, blocker, preferred_lateral)
-            if float(np.linalg.norm(bypass - cursor)) < 0.05:
-                break
-            route.append(bypass)
-            cursor = bypass
-        route.append(end.astype(np.float32))
-        return route
+        return routed
 
-    def _bypass(
-        self, start: Vec3, end: Vec3, blocker: tuple[Vec3, float], preferred_lateral: Vec3
-    ) -> Vec3:
-        """Create one bypass point around an obstacle pole."""
-        obstacle, ratio = blocker
-        segment = end[:2] - start[:2]
-        direction = normalize(
-            np.array([segment[0], segment[1], 0.0], dtype=np.float32),
-            np.array([1.0, 0.0, 0.0], dtype=np.float32),
-        )[:2]
-        perpendicular = np.array([-direction[1], direction[0]], dtype=np.float32)
-        preferred = normalize(preferred_lateral, np.array([0.0, 1.0, 0.0], dtype=np.float32))[:2]
-        side = 1.0 if float(np.dot(perpendicular, preferred)) >= 0.0 else -1.0
-        z = float(start[2] + ratio * (end[2] - start[2]))
-        bypass_radius = self._config.obstacle_clearance + self._config.bypass_extra
-        xy = obstacle[:2] + side * bypass_radius * perpendicular
-        return np.array([xy[0], xy[1], z], dtype=np.float32)
-
-    def _segment_blocker(
-        self, start: Vec3, end: Vec3, obstacles: NDArray[np.float32]
-    ) -> tuple[Vec3, float] | None:
-        """Return the nearest obstacle blocking the XY segment."""
-        if len(obstacles) == 0:
+    def _first_blocker(
+        self,
+        start: _Waypoint,
+        end: _Waypoint,
+        obstacles: NDArray[np.float32],
+        gates: list[GateFrame],
+    ) -> _Blocker | None:
+        """Return the first obstacle or non-target gate too close to a segment."""
+        if start.protected and end.protected and start.target_gate == end.target_gate:
             return None
-        segment = end[:2] - start[:2]
-        denom = float(np.dot(segment, segment))
+
+        blockers: list[_Blocker] = []
+        for obstacle in obstacles:
+            blocker = self._segment_blocker(
+                start.point,
+                end.point,
+                obstacle.astype(np.float32),
+                self._config.saturation_radius,
+                is_obstacle=True,
+            )
+            if blocker is not None:
+                blockers.append(blocker)
+
+        # While flying toward gate i, all other gate centers are forbidden XY
+        # regions.  The current gate is excluded so pre_i -> center_i -> post_i
+        # remains a valid crossing.
+        for gate in gates:
+            if gate.index == end.target_gate:
+                continue
+            blocker = self._segment_blocker(
+                start.point,
+                end.point,
+                gate.position,
+                self._config.gate_avoidance_radius,
+                is_obstacle=False,
+            )
+            if blocker is not None:
+                blockers.append(blocker)
+
+        if not blockers:
+            return None
+        blockers.sort(key=lambda item: item.ratio)
+        return blockers[0]
+
+    @staticmethod
+    def _segment_blocker(
+        start: Vec3,
+        end: Vec3,
+        center: Vec3,
+        radius: float,
+        is_obstacle: bool,
+    ) -> _Blocker | None:
+        segment_xy = end[:2] - start[:2]
+        denom = float(np.dot(segment_xy, segment_xy))
         if denom < 1e-9:
             return None
-        best_distance = self._config.obstacle_clearance
-        best: tuple[Vec3, float] | None = None
-        for obstacle in obstacles:
-            ratio = float(np.clip(np.dot(obstacle[:2] - start[:2], segment) / denom, 0.0, 1.0))
-            if ratio <= 0.04 or ratio >= 0.96:
-                continue
-            closest = start[:2] + ratio * segment
-            distance = float(np.linalg.norm(obstacle[:2] - closest))
-            if distance < best_distance:
-                best_distance = distance
-                best = (obstacle.astype(np.float32), ratio)
-        return best
+        ratio = float(np.clip(np.dot(center[:2] - start[:2], segment_xy) / denom, 0.0, 1.0))
+        if ratio <= 0.02 or ratio >= 0.98:
+            return None
+        closest_xy = start[:2] + ratio * segment_xy
+        if float(np.linalg.norm(center[:2] - closest_xy)) >= radius:
+            return None
+        return _Blocker(
+            center=center.astype(np.float32),
+            radius=float(radius),
+            ratio=ratio,
+            is_obstacle=is_obstacle,
+        )
 
-    def _segment_blocked(
-        self, start: Vec3, end: Vec3, obstacles: NDArray[np.float32]
-    ) -> bool:
-        return self._segment_blocker(start, end, obstacles) is not None
-
-    def _point_clear(self, point: Vec3, obstacles: NDArray[np.float32]) -> bool:
-        if len(obstacles) == 0:
-            return True
-        distances = np.linalg.norm(obstacles[:, :2] - point[:2], axis=1)
-        return bool(float(np.min(distances)) >= self._config.obstacle_clearance)
-
-    def _smooth_controls(
+    def _detour_points(
         self,
-        controls: NDArray[np.float32],
+        start: Vec3,
+        end: Vec3,
+        blocker: _Blocker,
         obstacles: NDArray[np.float32],
-        protected: NDArray[np.bool_],
-    ) -> NDArray[np.float32]:
-        """Lightly smooth intermediate controls while preserving gate traversal points."""
-        if len(controls) < 4:
-            return controls.astype(np.float32)
-        smoothed = controls.copy()
-        for _ in range(self._config.control_smoothing_passes):
-            updated = smoothed.copy()
-            for idx in range(1, len(smoothed) - 1):
-                if bool(protected[idx]):
-                    continue
-                candidate = (
-                    (1.0 - self._config.control_smoothing_weight) * smoothed[idx]
-                    + self._config.control_smoothing_weight
-                    * 0.5
-                    * (smoothed[idx - 1] + smoothed[idx + 1])
-                ).astype(np.float32)
-                candidate[2] = smoothed[idx, 2]
-                if self._point_clear(candidate, obstacles):
-                    updated[idx] = candidate
-            smoothed = updated
-        return dedupe(smoothed, min_distance=0.035)
+        gates: list[GateFrame],
+        target_gate: int,
+    ) -> list[Vec3]:
+        """Choose a left/right XY detour around a cylindrical forbidden region."""
+        segment_xy = end[:2] - start[:2]
+        norm = float(np.linalg.norm(segment_xy))
+        if norm < 1e-6:
+            return [(0.5 * (start + end)).astype(np.float32)]
+        direction = segment_xy / norm
+        perpendicular = np.array([-direction[1], direction[0]], dtype=np.float32)
+        radius = blocker.radius + self._config.obstacle_detour_margin
+        z = float(start[2] + blocker.ratio * (end[2] - start[2]))
+        candidates = []
+        for side in (1.0, -1.0):
+            xy = blocker.center[:2] + side * radius * perpendicular
+            if blocker.is_obstacle:
+                # Obstacles are vertical cylinders.  Two bypass points in XY
+                # keep the cubic spline from cutting through the cylinder
+                # between sparse waypoints.
+                span = 0.5 * blocker.radius
+                ratios = (
+                    float(np.clip(blocker.ratio - span / max(norm, 1e-6), 0.0, 1.0)),
+                    float(np.clip(blocker.ratio + span / max(norm, 1e-6), 0.0, 1.0)),
+                )
+                points = [
+                    np.array(
+                        [
+                            xy[0] - span * direction[0],
+                            xy[1] - span * direction[1],
+                            float(start[2] + ratios[0] * (end[2] - start[2])),
+                        ],
+                        dtype=np.float32,
+                    ),
+                    np.array(
+                        [
+                            xy[0] + span * direction[0],
+                            xy[1] + span * direction[1],
+                            float(start[2] + ratios[1] * (end[2] - start[2])),
+                        ],
+                        dtype=np.float32,
+                    ),
+                ]
+            else:
+                points = [np.array([xy[0], xy[1], z], dtype=np.float32)]
+            candidates.append(
+                (self._detour_score(start, end, points, obstacles, gates, target_gate), points)
+            )
+        candidates.sort(key=lambda item: item[0])
+        return candidates[0][1]
+
+    def _detour_score(
+        self,
+        start: Vec3,
+        end: Vec3,
+        points: list[Vec3],
+        obstacles: NDArray[np.float32],
+        gates: list[GateFrame],
+        target_gate: int,
+    ) -> float:
+        chain = [start, *points, end]
+        turn_score = 0.0
+        for prev, current, nxt in zip(chain[:-2], chain[1:-1], chain[2:], strict=True):
+            before = current[:2] - prev[:2]
+            after = nxt[:2] - current[:2]
+            before_norm = float(np.linalg.norm(before))
+            after_norm = float(np.linalg.norm(after))
+            if before_norm < 1e-6 or after_norm < 1e-6:
+                return np.inf
+            before /= before_norm
+            after /= after_norm
+            turn_score += 1.0 - float(np.dot(before, after))
+        clearance = min(
+            self._minimum_clearance(point, obstacles, gates, target_gate) for point in points
+        )
+        if self._path_violates_obstacles(points, obstacles):
+            return np.inf
+        return turn_score - 0.05 * clearance
+
+    def _minimum_clearance(
+        self,
+        point: Vec3,
+        obstacles: NDArray[np.float32],
+        gates: list[GateFrame],
+        target_gate: int,
+    ) -> float:
+        clearances: list[float] = []
+        for obstacle in obstacles:
+            clearances.append(float(np.linalg.norm(point[:2] - obstacle[:2])))
+        for gate in gates:
+            if gate.index != target_gate:
+                clearances.append(float(np.linalg.norm(point[:2] - gate.position[:2])))
+        return min(clearances) if clearances else 0.0
+
+    def _path_violates_obstacles(
+        self,
+        points: list[Vec3],
+        obstacles: NDArray[np.float32],
+    ) -> bool:
+        for point in points:
+            for obstacle in obstacles:
+                if float(np.linalg.norm(point[:2] - obstacle[:2])) < self._config.saturation_radius:
+                    return True
+        return False
+
+    def _cleanup_waypoints(self, waypoints: list[_Waypoint]) -> list[_Waypoint]:
+        """Remove only duplicate or nearly collinear non-protected waypoints."""
+        cleaned: list[_Waypoint] = []
+        for waypoint in waypoints:
+            if (
+                cleaned
+                and not waypoint.protected
+                and float(np.linalg.norm(waypoint.point - cleaned[-1].point))
+                < self._config.min_waypoint_spacing
+            ):
+                continue
+            cleaned.append(waypoint)
+
+        angle_threshold = np.deg2rad(self._config.collinear_angle_threshold_deg)
+        idx = 1
+        while idx < len(cleaned) - 1:
+            waypoint = cleaned[idx]
+            if waypoint.protected:
+                idx += 1
+                continue
+            before = waypoint.point - cleaned[idx - 1].point
+            after = cleaned[idx + 1].point - waypoint.point
+            before_norm = float(np.linalg.norm(before))
+            after_norm = float(np.linalg.norm(after))
+            if before_norm < 1e-6 or after_norm < 1e-6:
+                del cleaned[idx]
+                continue
+            angle = float(np.arccos(np.clip(np.dot(before, after) / (before_norm * after_norm), -1.0, 1.0)))
+            if angle < angle_threshold:
+                del cleaned[idx]
+                continue
+            idx += 1
+        return cleaned
 
     @staticmethod
     def _to_gate_local(points: NDArray[np.float32], gate: GateFrame) -> NDArray[np.float32]:
@@ -243,31 +372,3 @@ class GateTargetPlanner:
         return np.column_stack([rel @ gate.forward, rel @ gate.lateral, rel @ gate.up]).astype(
             np.float32
         )
-
-    @staticmethod
-    def _per_gate(values: tuple[float, ...], gate_idx: int, default: float) -> float:
-        if gate_idx < len(values):
-            return float(values[gate_idx])
-        return default
-
-    @staticmethod
-    def _align_gate_ids(
-        original_points: list[Vec3], original_ids: list[int], controls: NDArray[np.float32]
-    ) -> NDArray[np.int32]:
-        ids: list[int] = []
-        source = np.asarray(original_points, dtype=np.float32)
-        for point in controls:
-            nearest = int(np.argmin(np.linalg.norm(source - point, axis=1)))
-            ids.append(original_ids[nearest])
-        return np.asarray(ids, dtype=np.int32)
-
-    @staticmethod
-    def _align_protected_points(
-        original_points: list[Vec3], original_protected: list[bool], controls: NDArray[np.float32]
-    ) -> NDArray[np.bool_]:
-        protected: list[bool] = []
-        source = np.asarray(original_points, dtype=np.float32)
-        for point in controls:
-            nearest = int(np.argmin(np.linalg.norm(source - point, axis=1)))
-            protected.append(original_protected[nearest])
-        return np.asarray(protected, dtype=np.bool_)
