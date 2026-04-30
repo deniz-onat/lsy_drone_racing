@@ -52,12 +52,12 @@ class PlannerSettings:
     clearance_push_max: Array3 = field(
         default_factory=lambda: np.array([0.12, 0.12, 0.12, 0.06], dtype=np.float64)
     )
-    gate0_lateral_bias: float = 0.035
+    gate0_lateral_bias: float = 0.04
     gate0_vertical_bias: float = 0.02
     gate1_exit_offset: float = 0.35
     gate1_shift_toward_gate0: float = 0.02
     gate2_entry_offset: float = 0.30
-    gate2_exit_offset: float = 0.08
+    gate2_exit_offset: float = 0.07
     gate3_entry_offset: float = 0.20
     gate3_exit_offset: float = 0.40
     gate_axis_eps: float = 1e-9
@@ -100,7 +100,7 @@ class FeedbackSettings:
     """PID sınırları ve sektör kazanç tabloları."""
 
     outer_clamp: Array3 = field(
-        default_factory=lambda: np.array([2.35, 2.35, 1.85], dtype=np.float64)
+        default_factory=lambda: np.array([2.4, 2.35, 1.8], dtype=np.float64)
     )
     inner_i_limit: Array3 = field(
         default_factory=lambda: np.array([0.75, 0.75, 0.45], dtype=np.float64)
@@ -109,7 +109,7 @@ class FeedbackSettings:
         default_factory=lambda: np.array([3.2, 3.2, 4.2], dtype=np.float64)
     )
     derivative_tau: Array3 = field(
-        default_factory=lambda: np.array([0.045, 0.045, 0.060], dtype=np.float64)
+        default_factory=lambda: np.array([0.05, 0.05, 0.06], dtype=np.float64)
     )
     eps: float = 1e-9
     profiles: tuple[FeedbackProfile, ...] = field(
@@ -122,19 +122,19 @@ class FeedbackSettings:
             ),
             FeedbackProfile(
                 np.array([0.65, 0.65, 1.65], dtype=np.float64),
-                np.array([0.045, 0.045, 0.05], dtype=np.float64),
+                np.array([0.05, 0.05, 0.05], dtype=np.float64),
                 np.array([0.55, 0.55, 0.50], dtype=np.float64),
                 np.array([1.5, 1.5, 0.4], dtype=np.float64),
             ),
             FeedbackProfile(
                 np.array([0.65, 0.65, 1.55], dtype=np.float64),
-                np.array([0.045, 0.045, 0.05], dtype=np.float64),
+                np.array([0.05, 0.05, 0.05], dtype=np.float64),
                 np.array([0.45, 0.45, 0.50], dtype=np.float64),
                 np.array([1.5, 1.5, 0.4], dtype=np.float64),
             ),
             FeedbackProfile(
                 np.array([0.65, 0.65, 1.65], dtype=np.float64),
-                np.array([0.045, 0.045, 0.05], dtype=np.float64),
+                np.array([0.05, 0.05, 0.05], dtype=np.float64),
                 np.array([0.30, 0.30, 0.50], dtype=np.float64),
                 np.array([1.5, 1.5, 0.4], dtype=np.float64),
             ),
@@ -169,13 +169,13 @@ DEFAULT_GATE_POS = np.array(
     [[0.5, 0.25, 0.7], [1.05, 0.75, 1.2], [-1.0, -0.25, 0.7], [0.0, -0.75, 1.2]], dtype=np.float64
 )
 DEFAULT_GATE_RPY = np.array(
-    [[0.0, 0.0, -0.78], [0.0, 0.0, 2.35], [0.0, 0.0, 3.14], [0.0, 0.0, 0.0]], dtype=np.float64
+    [[0.0, 0.0, -0.78], [0.0, 0.0, 2.4], [0.0, 0.0, 3.14], [0.0, 0.0, 0.0]], dtype=np.float64
 )
 DEFAULT_OBSTACLES = np.array(
-    [[0.0, 0.75, 1.55], [1.0, 0.25, 1.55], [-1.5, -0.25, 1.55], [-0.5, -0.75, 1.55]],
+    [[0.0, 0.75, 1.6], [1.0, 0.25, 1.6], [-1.5, -0.25, 1.55], [-0.5, -0.75, 1.55]],
     dtype=np.float64,
 )
 START_WAYPOINT = np.array([-1.5, 0.75, 0.05], dtype=np.float64)
 GATE1_ARC_POINTS = np.array([[1.08, -0.16, 0.86], [1.38, 0.12, 1.08]], dtype=np.float64)
 ROUTE2_MIDPOINT = np.array([0.0, 0.25, 1.0], dtype=np.float64)
-ROUTE3_MIDPOINT = np.array([-0.55, -0.42, 0.85], dtype=np.float64)
+ROUTE3_MIDPOINT = np.array([-0.6, -0.42, 0.8], dtype=np.float64)
