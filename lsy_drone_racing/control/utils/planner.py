@@ -17,9 +17,9 @@ class PlannerConfig:
     d_pre: float = 0.45
     d_post: float = 0.30
     d_stop: float = 0.30
-    v_cruise: float = 0.8
+    v_cruise: float = 0.9
     v_cruise_inter: float = 0.0  # inter-gate cruise (>v_cruise to speed up). 0 disables.
-    t_min_seg: float = 0.4
+    t_min_seg: float = 0.2
     r_obs: float = 0.28
     # Per-gate overrides (indexed by original gate index, 0-based). Entries
     # missing or NaN fall back to the global ``d_pre`` / ``d_post`` /

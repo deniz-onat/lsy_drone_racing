@@ -135,10 +135,10 @@ TAKEOFF_SEG_MIN_T = 0.9
 
 @dataclass(frozen=True)
 class RacingLineConfig:
-    v_cruise: float = 2.5
-    t_min_seg: float = 0.15
-    max_accel: float = 6.0  # m/s² — cap peak spline acceleration
-    max_vel: float = 3.5  # m/s — cap peak spline speed
+    v_cruise: float = 10.0
+    t_min_seg: float = 0.09
+    max_accel: float = 20.0  # m/s² — cap peak spline acceleration
+    max_vel: float = 15.0  # m/s — cap peak spline speed
     r_obs: float = 0.22
 
 

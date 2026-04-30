@@ -188,7 +188,12 @@ class GateAwareFastV3S55T757(Controller):
     WING_OFFSET = 0.28  # distance along gate y/z axis to wing midpoint
     USE_RACING_LINE = False
     PLANNER = PlannerConfig(
-        d_pre=0.28, d_post=0.18, v_cruise=2.60, v_cruise_inter=4.00, t_min_seg=0.24, r_obs=0.22
+        d_pre=0.28,
+        d_post=0.18,
+        v_cruise=2.90,
+        v_cruise_inter=4.80,
+        t_min_seg=0.22,
+        r_obs=0.22,
     )
     RACING_LINE = RacingLineConfig(
         v_cruise=1.8, t_min_seg=0.15, max_accel=9.0, max_vel=4.0, r_obs=0.22
