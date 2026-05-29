@@ -1,4 +1,4 @@
-"""KaFa_1500_v5 için attitude eylemi üretimi."""
+"""Attitude action generation for KaFa_1500_v5."""
 # ruff: noqa: TC001, TC002
 
 from __future__ import annotations
@@ -9,15 +9,15 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.spatial.transform import Rotation
 
-from lsy_drone_racing.control.kafa1500_v5.feedback import CascadedPid
-from lsy_drone_racing.control.kafa1500_v5.geometry import body_z_from_quat
-from lsy_drone_racing.control.kafa1500_v5.settings import CommandSettings
-from lsy_drone_racing.control.kafa1500_v5.trajectory import ReferenceCurve
+from lsy_drone_racing.control.legacy.kafa1500_v5.feedback import CascadedPid
+from lsy_drone_racing.control.legacy.kafa1500_v5.geometry import body_z_from_quat
+from lsy_drone_racing.control.legacy.kafa1500_v5.settings import CommandSettings
+from lsy_drone_racing.control.legacy.kafa1500_v5.trajectory import ReferenceCurve
 
 
 @dataclass(frozen=True)
 class TrackingSample:
-    """Tanılama için kullanılan referans değerler ve geri besleme terimleri."""
+    """Reference values and feedback terms used for diagnostics."""
 
     pos_ref: NDArray[np.float64]
     vel_ref: NDArray[np.float64]
@@ -38,7 +38,7 @@ def attitude_action(
     gravity: float,
     settings: CommandSettings,
 ) -> tuple[NDArray[np.float32], TrackingSample]:
-    """Bir konum referansını izler ve [roll, pitch, yaw, collective_thrust] döndürür."""
+    """Track a position reference and return [roll, pitch, yaw, collective_thrust]."""
     ref_pos = np.asarray(reference(t_eval), dtype=np.float64).reshape(3)
     ref_vel = np.asarray(reference.derivative(1)(t_eval), dtype=np.float64).reshape(3)
     ref_acc = np.asarray(reference.derivative(2)(t_eval), dtype=np.float64).reshape(3)
@@ -70,7 +70,7 @@ def _vector_to_attitude(
     else:
         z_des = thrust_vector / norm
 
-    # Yaw politikası: istenen gövde x eksenini dünya x ekseniyle olabildiğince hizala.
+    # Yaw policy: align the desired body x-axis with the world x-axis as much as possible.
     world_x = np.array([1.0, 0.0, 0.0], dtype=np.float64)
     y_des = np.cross(z_des, world_x)
     y_norm = float(np.linalg.norm(y_des))

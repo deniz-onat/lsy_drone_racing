@@ -6,11 +6,11 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from lsy_drone_racing.control.kafa1500_attitude.types import Reference
+from lsy_drone_racing.control.legacy.kafa1500_attitude.types import Reference
 
 if TYPE_CHECKING:
-    from lsy_drone_racing.control.kafa1500_attitude.config import ReferenceConfig
-    from lsy_drone_racing.control.kafa1500_attitude.types import CubicPath, Vec3
+    from lsy_drone_racing.control.legacy.kafa1500_attitude.config import ReferenceConfig
+    from lsy_drone_racing.control.legacy.kafa1500_attitude.types import CubicPath, Vec3
 
 
 class ReferenceManager:

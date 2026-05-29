@@ -1,4 +1,4 @@
-"""KaFa_1500_v5 denetleyicisi için gözlem ayrıştırma işlemleri."""
+"""Observation parsing routines for the KaFa_1500_v5 controller."""
 # ruff: noqa: TC002
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from numpy.typing import NDArray
 
 @dataclass(frozen=True)
 class DroneObservation:
-    """[qx, qy, qz, qw] kuaterniyon sırasını kullanan tek dron gözlem çerçevesi."""
+    """Single-drone observation frame using [qx, qy, qz, qw] quaternion order."""
 
     target_gate: int
     gate_pos: NDArray[np.float64]
@@ -22,7 +22,7 @@ class DroneObservation:
 
 
 def scalar_gate_index(value: object) -> int:
-    """Depodaki target-gate alanını tekil bir tamsayıya dönüştürür."""
+    """Convert the stored target-gate field into a single integer."""
     arr = np.asarray(value)
     if arr.size != 1:
         raise ValueError(f"target_gate must contain exactly one value, got shape {arr.shape}")
@@ -30,7 +30,7 @@ def scalar_gate_index(value: object) -> int:
 
 
 def as_vector(value: object, length: int, name: str) -> NDArray[np.float64]:
-    """Sabit uzunlukta bir kayan nokta vektörü döndürür."""
+    """Return a fixed-length floating-point vector."""
     arr = np.asarray(value, dtype=np.float64).reshape(-1)
     if arr.shape != (length,):
         raise ValueError(f"{name} must have shape ({length},), got {arr.shape}")
@@ -38,7 +38,7 @@ def as_vector(value: object, length: int, name: str) -> NDArray[np.float64]:
 
 
 def parse_observation(obs: dict[str, NDArray[np.floating]]) -> DroneObservation:
-    """Denetleyicinin ihtiyaç duyduğu gözlem anahtarlarını ayrıştırır ve doğrular."""
+    """Parse and validate the observation keys required by the controller."""
     gate_pos = np.asarray(obs["gates_pos"], dtype=np.float64)
     gate_quat = np.asarray(obs["gates_quat"], dtype=np.float64)
     if gate_pos.ndim != 2 or gate_pos.shape[1] != 3:

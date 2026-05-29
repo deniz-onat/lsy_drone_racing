@@ -7,14 +7,14 @@ from typing import TYPE_CHECKING
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
-from lsy_drone_racing.control.kafa1500_attitude.types import GateFrame
-from lsy_drone_racing.control.kafa1500_attitude.utils import dedupe, normalize
+from lsy_drone_racing.control.legacy.kafa1500_attitude.types import GateFrame
+from lsy_drone_racing.control.legacy.kafa1500_attitude.utils import dedupe, normalize
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
-    from lsy_drone_racing.control.kafa1500_attitude.config import PathConfig
-    from lsy_drone_racing.control.kafa1500_attitude.types import Observation, Vec3
+    from lsy_drone_racing.control.legacy.kafa1500_attitude.config import PathConfig
+    from lsy_drone_racing.control.legacy.kafa1500_attitude.types import Observation, Vec3
 
 
 class GateTargetPlanner:

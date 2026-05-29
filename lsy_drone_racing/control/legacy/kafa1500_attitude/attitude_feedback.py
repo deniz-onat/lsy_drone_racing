@@ -8,13 +8,13 @@ import numpy as np
 from drone_models.core import load_params
 from scipy.spatial.transform import Rotation as R
 
-from lsy_drone_racing.control.kafa1500_attitude.utils import clip_norm, slew_angle
+from lsy_drone_racing.control.legacy.kafa1500_attitude.utils import clip_norm, slew_angle
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
-    from lsy_drone_racing.control.kafa1500_attitude.config import FeedbackConfig
-    from lsy_drone_racing.control.kafa1500_attitude.types import Observation, Reference, Vec3
+    from lsy_drone_racing.control.legacy.kafa1500_attitude.config import FeedbackConfig
+    from lsy_drone_racing.control.legacy.kafa1500_attitude.types import Observation, Reference, Vec3
 
 
 class AttitudeFeedback:

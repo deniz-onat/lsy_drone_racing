@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from lsy_drone_racing.control.kafa1500_v2.types import CubicPath
-from lsy_drone_racing.control.kafa1500_v2.utils import cumulative_lengths
+from lsy_drone_racing.control.legacy.kafa1500_v2.types import CubicPath
+from lsy_drone_racing.control.legacy.kafa1500_v2.utils import cumulative_lengths
 
 
 class ReferenceAdapter:

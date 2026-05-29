@@ -1,4 +1,4 @@
-"""KaFa_1500_v5 için kademeli konum/hız geri beslemesi."""
+"""Cascaded position/velocity feedback for KaFa_1500_v5."""
 # ruff: noqa: TC001, TC002
 
 from __future__ import annotations
@@ -8,12 +8,12 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from lsy_drone_racing.control.kafa1500_v5.settings import FeedbackProfile, FeedbackSettings
+from lsy_drone_racing.control.legacy.kafa1500_v5.settings import FeedbackProfile, FeedbackSettings
 
 
 @dataclass(frozen=True)
 class CascadeGains:
-    """Dış konum ve iç hız döngüleri için çözümlenmiş kazançlar."""
+    """Resolved gains for the outer position and inner velocity loops."""
 
     outer_kp: NDArray[np.float64]
     outer_ki: NDArray[np.float64]
@@ -28,7 +28,7 @@ class CascadeGains:
 
 
 def resolve_gains(profile: FeedbackProfile, settings: FeedbackSettings) -> CascadeGains:
-    """Belgelendirilen eski PID tablosunu kademeli kazançlara dönüştürür."""
+    """Convert the documented legacy PID table into cascaded gains."""
     inner_kp = np.maximum(1.04 * profile.kd, settings.eps)
     return CascadeGains(
         outer_kp=0.98 * profile.kp / inner_kp,
@@ -45,10 +45,10 @@ def resolve_gains(profile: FeedbackProfile, settings: FeedbackSettings) -> Casca
 
 
 class CascadedPid:
-    """Anti-windup ve türev filtreleme içeren durumlu kademeli denetleyici."""
+    """Stateful cascaded controller with anti-windup and derivative filtering."""
 
     def __init__(self, settings: FeedbackSettings):
-        """Sektör 0 kazançlarını kullanarak bir kademeli denetleyici oluşturur."""
+        """Create a cascaded controller using sector 0 gains."""
         self._settings = settings
         self._sector = 0
         self._gains = resolve_gains(settings.profiles[0], settings)
@@ -59,18 +59,18 @@ class CascadedPid:
 
     @property
     def sector(self) -> int:
-        """Şu anda etkin olan kazanç sektörü."""
+        """The currently active gain sector."""
         return self._sector
 
     def reset(self) -> None:
-        """İntegratörleri ve türev belleğini temizler."""
+        """Clear integrators and derivative memory."""
         self._outer_integral.fill(0.0)
         self._inner_integral.fill(0.0)
         self._previous_velocity_error = None
         self._filtered_derivative.fill(0.0)
 
     def set_sector(self, sector: int, preserve_integrals: bool = True) -> None:
-        """Kazanç çizelgesini değiştirir, mevcut integral durumunu yeni sınırlara kırpar."""
+        """Switch the gain schedule and clip current integral state to the new limits."""
         sector = int(np.clip(sector, 0, len(self._settings.profiles) - 1))
         if sector == self._sector:
             return
@@ -91,7 +91,7 @@ class CascadedPid:
     def update(
         self, pos_error: NDArray[np.float64], vel_error: NDArray[np.float64], dt: float
     ) -> NDArray[np.float64]:
-        """Kırpılmış, kuvvet benzeri bir geri besleme komutu döndürür."""
+        """Return a clipped, force-like feedback command."""
         pos_error = np.asarray(pos_error, dtype=np.float64).reshape(3)
         vel_error = np.asarray(vel_error, dtype=np.float64).reshape(3)
         dt = max(float(dt), self._settings.eps)
