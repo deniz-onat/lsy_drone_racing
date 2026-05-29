@@ -6,12 +6,12 @@ import numpy as np
 from drone_models.core import load_params
 
 from lsy_drone_racing.control import Controller
-from lsy_drone_racing.control.kafa1500_v5.attitude import TrackingSample, attitude_action
-from lsy_drone_racing.control.kafa1500_v5.feedback import CascadedPid
-from lsy_drone_racing.control.kafa1500_v5.geometry import gate_rpy_from_quat
-from lsy_drone_racing.control.kafa1500_v5.settings import ControllerSettings
-from lsy_drone_racing.control.kafa1500_v5.state import parse_observation
-from lsy_drone_racing.control.kafa1500_v5.trajectory import ReferenceManager, ReferencePlan
+from lsy_drone_racing.control.legacy.kafa1500_v5.attitude import TrackingSample, attitude_action
+from lsy_drone_racing.control.legacy.kafa1500_v5.feedback import CascadedPid
+from lsy_drone_racing.control.legacy.kafa1500_v5.geometry import gate_rpy_from_quat
+from lsy_drone_racing.control.legacy.kafa1500_v5.settings import ControllerSettings
+from lsy_drone_racing.control.legacy.kafa1500_v5.state import parse_observation
+from lsy_drone_racing.control.legacy.kafa1500_v5.trajectory import ReferenceManager, ReferencePlan
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray

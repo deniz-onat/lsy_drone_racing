@@ -9,16 +9,18 @@ import casadi as ca
 import numpy as np
 import scipy
 from acados_template import AcadosModel, AcadosOcp, AcadosOcpSolver
+from crazyflow.sim.visualize import draw_line, draw_points
 from drone_models.core import load_params
 from drone_models.so_rpy import symbolic_dynamics_euler
 from drone_models.utils.rotation import ang_vel2rpy_rates
 from scipy.spatial.transform import Rotation as R
 
 from lsy_drone_racing.control import Controller
-from lsy_drone_racing.control.utils.planner import Plan, PlannerConfig, build_plan
-from lsy_drone_racing.control.utils.racing_line import RacingLineConfig, build_racing_line_plan
+from lsy_drone_racing.control.legacy.utils.planner import Plan, PlannerConfig, build_plan
+from lsy_drone_racing.control.legacy.utils.racing_line import RacingLineConfig, build_racing_line_plan
 
 if TYPE_CHECKING:
+    from crazyflow import Sim
     from numpy.typing import NDArray
 
 # Unique suffix for acados generated artifacts so parallel benchmark workers
@@ -227,6 +229,8 @@ class GateAwareFastV3S55T757(Controller):
         self._plan_spline_ticks = 0
         self._pos_samples = np.zeros((0, 3))
         self._vel_samples = np.zeros((0, 3))
+        self._route_line = np.zeros((0, 3), dtype=np.float32)
+        self._route_waypoints = np.zeros((0, 3), dtype=np.float32)
         self._replan(obs, start_vel=np.zeros(3), target_gate=0)
 
         self._prev_gates_visited = np.asarray(obs["gates_visited"]).copy()
@@ -277,6 +281,8 @@ class GateAwareFastV3S55T757(Controller):
         padded_velocities = np.zeros((self.PLAN_PAD, 3))
         self._pos_samples = np.vstack([position_samples, padded_positions])
         self._vel_samples = np.vstack([velocity_samples, padded_velocities])
+        self._route_line = np.asarray(position_samples, dtype=np.float32)
+        self._route_waypoints = np.asarray(plan.waypoints, dtype=np.float32)
         self._plan_spline_ticks = sample_count
         self._tick = 0
 
@@ -399,6 +405,18 @@ class GateAwareFastV3S55T757(Controller):
         self._flight_tick = 0
         self._terminal_state = None
         self._last_live_state = None
+
+    def render_callback(self, sim: Sim) -> None:
+        """Visualize the current planned route and active MPC target."""
+        if len(self._route_line) > 1:
+            draw_line(sim, self._route_line, rgba=(0.0, 1.0, 0.0, 1.0))
+        if len(self._route_waypoints) > 0:
+            draw_points(sim, self._route_waypoints, rgba=(0.0, 0.35, 1.0, 1.0), size=0.025)
+        if len(self._pos_samples) == 0:
+            return
+        target_index = min(self._tick, self._plan_spline_ticks + self.PLAN_PAD - 1)
+        target = self._pos_samples[target_index].reshape(1, -1)
+        draw_points(sim, target, rgba=(1.0, 0.0, 0.0, 1.0), size=0.035)
 
     def _write_diagnostic(self, terminal_snapshot: dict) -> None:
         position = terminal_snapshot.get("pos", np.zeros(3))
