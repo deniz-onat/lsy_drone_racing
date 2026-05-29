@@ -1,0 +1,160 @@
+"""Generic observation-driven cascaded-PID attitude controller (KaFa_1500_v6)."""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+import numpy as np
+from crazyflow.sim.visualize import draw_line
+from drone_models.core import load_params
+
+from lsy_drone_racing.control import Controller
+from lsy_drone_racing.control.kafa1500_v6.attitude import attitude_action
+from lsy_drone_racing.control.kafa1500_v6.feedback import CascadedPid
+from lsy_drone_racing.control.kafa1500_v6.settings import ControllerSettings
+from lsy_drone_racing.control.kafa1500_v6.state import parse_observation
+from lsy_drone_racing.control.kafa1500_v6.trajectory import ReferenceManager
+
+if TYPE_CHECKING:
+    from crazyflow import Sim
+    from numpy.typing import NDArray
+
+    from lsy_drone_racing.control.kafa1500_v6.trajectory import ReferencePlan
+
+
+class KaFa1500V6(Controller):
+    """Flies any observed gate layout with a global-replan cubic-spline reference."""
+
+    def __init__(self, obs: dict[str, NDArray[np.floating]], info: dict, config: dict):
+        """Initialize timing, drone parameters, feedback, and the reference manager."""
+        super().__init__(obs, info, config)
+        if config.env.control_mode != "attitude":
+            raise ValueError("KaFa_1500_v6 requires env.control_mode = 'attitude'.")
+        self._settings = ControllerSettings()
+        self._freq = float(config.env.freq)
+        self._dt = 1.0 / self._freq
+        params = load_params(config.sim.physics, config.sim.drone_model)
+        self._mass = float(params["mass"])
+        self._feedback = CascadedPid(self._settings.feedback)
+        self._references = ReferenceManager(
+            self._settings.planner,
+            self._settings.runtime.replan_gate_delta_m,
+            self._settings.runtime.replan_obstacle_delta_m,
+        )
+        self._tick = 0
+        self._plan_start_tick = 0
+        self._progress_t = 0.0
+        self._finished = False
+        self._last_time = 0.0
+        self._last_target = -1
+        self._last_action = self._hover_action()
+
+    def compute_control(
+        self, obs: dict[str, NDArray[np.floating]], info: dict | None = None
+    ) -> NDArray[np.floating]:
+        """Return a [roll, pitch, yaw, thrust] attitude action for the current step."""
+        frame = parse_observation(obs)
+        now = min(self._tick / self._freq, self._settings.runtime.timeout_s)
+        self._last_time = now
+        self._last_target = frame.target_gate
+
+        if frame.target_gate == -1 or now >= self._settings.runtime.timeout_s:
+            self._finished = True
+            return self._last_action.copy()
+
+        plan, rebuilt = self._references.ensure_plan(frame)
+        if rebuilt:
+            self._plan_start_tick = self._tick
+            self._progress_t = 0.0
+        clock_t = (self._tick - self._plan_start_tick) * self._dt
+        self._progress_t = self._project(plan, frame.pos)
+        t_eval = float(
+            np.clip(
+                min(clock_t, self._progress_t + self._settings.runtime.lookahead_s),
+                0.0,
+                plan.t_total,
+            )
+        )
+        action, _ = attitude_action(
+            plan.curve,
+            t_eval,
+            frame.pos,
+            frame.vel,
+            frame.quat,
+            self._feedback,
+            self._dt,
+            self._mass,
+            self._settings.runtime.gravity,
+            self._settings.command,
+        )
+        self._last_action = action
+        return action.copy()
+
+    def _project(self, plan: ReferencePlan, pos: NDArray[np.floating]) -> float:
+        """Find the spline time of the closest point ahead of the current progress."""
+        window = self._settings.runtime.projection_window_s
+        upper = min(self._progress_t + window, plan.t_total)
+        sample_t = np.linspace(self._progress_t, upper, 40)
+        distances = np.linalg.norm(np.asarray(plan.curve(sample_t)) - pos, axis=1)
+        return float(sample_t[int(np.argmin(distances))])
+
+    def step_callback(
+        self,
+        action: NDArray[np.floating],
+        obs: dict[str, NDArray[np.floating]],
+        reward: float,
+        terminated: bool,
+        truncated: bool,
+        info: dict,
+    ) -> bool:
+        """Advance the controller clock after an environment step."""
+        self._tick += 1
+        return self._finished
+
+    def reset(self) -> None:
+        """Reset per-episode controller state."""
+        self._tick = 0
+        self._progress_t = 0.0
+        self._finished = False
+        self._last_time = 0.0
+        self._last_target = -1
+        self._feedback.reset()
+        self._references.reset()
+        self._last_action = self._hover_action()
+
+    def episode_callback(self) -> None:
+        """Reset state after an episode completes."""
+        self.reset()
+
+    def episode_reset(self) -> None:
+        """Reset state before the next episode starts."""
+        self.reset()
+
+    def render_callback(self, sim: Sim) -> None:
+        """Draw the active reference spline for debugging."""
+        plan = self._references.plan
+        if plan is None:
+            return
+        samples = plan.curve(np.linspace(0.0, plan.t_total, 100))
+        draw_line(sim, np.asarray(samples, dtype=np.float32), rgba=(0.0, 1.0, 0.0, 1.0))
+
+    def diagnostic(self) -> dict[str, float | int | str | None]:
+        """Return a short status summary for debugging and logging."""
+        plan = self._references.plan
+        return {
+            "controller_phase": "FINISHED" if self._finished else "TRACKING",
+            "active_target_gate": self._last_target,
+            "controller_time": self._last_time,
+            "reference_end_time": None if plan is None else plan.t_total,
+        }
+
+    def _hover_action(self) -> NDArray[np.float32]:
+        """Build a level hover action that holds altitude at startup and on finish."""
+        thrust = float(
+            np.clip(
+                self._mass * self._settings.runtime.gravity,
+                self._settings.command.thrust_min,
+                self._settings.command.thrust_max,
+            )
+        )
+        return np.array([0.0, 0.0, 0.0, thrust], dtype=np.float32)
