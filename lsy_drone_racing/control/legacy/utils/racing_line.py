@@ -33,7 +33,7 @@ import numpy as np
 from scipy.interpolate import CubicSpline, PchipInterpolator
 from scipy.spatial.transform import Rotation as R
 
-from lsy_drone_racing.control.utils.planner import Plan, _insert_obstacle_midpoints, _nudge_lateral
+from lsy_drone_racing.control.legacy.utils.planner import Plan, _insert_obstacle_midpoints, _nudge_lateral
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray

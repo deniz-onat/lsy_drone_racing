@@ -1,4 +1,4 @@
-"""KaFa_1500_v5 denetleyicisi için merkezi parametreler."""
+"""Centralized parameters for the KaFa_1500_v5 controller."""
 # ruff: noqa: TC002
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ Array3 = NDArray[np.float64]
 
 @dataclass(frozen=True)
 class SpeedProfile:
-    """Bir sektörün başında, ortasında ve sonunda kullanılan göreli hız çarpanları."""
+    """Relative speed multipliers used at the start, middle, and end of a sector."""
 
     start: float
     mid: float
@@ -23,7 +23,7 @@ class SpeedProfile:
 
 @dataclass(frozen=True)
 class PlannerSettings:
-    """Rota ve referans üretimi ayarları."""
+    """Route and reference generation settings."""
 
     nominal_leg_times: Array3 = field(
         default_factory=lambda: np.array([3.85, 2.50, 3.50, 2.25], dtype=np.float64)
@@ -66,18 +66,18 @@ class PlannerSettings:
 
     @property
     def leg_times(self) -> Array3:
-        """Her kapı sektörü için denetleyici saniyesi cinsinden süre."""
+        """Duration of each gate sector in controller seconds."""
         return self.nominal_leg_times * self.global_time_scale * self.leg_time_scale
 
     @property
     def leg_starts(self) -> Array3:
-        """Her sektör için mutlak denetleyici başlangıç zamanı."""
+        """Absolute controller start time for each sector."""
         return np.concatenate(([0.0], np.cumsum(self.leg_times[:-1])))
 
 
 @dataclass(frozen=True)
 class RuntimeSettings:
-    """Bölüm ve yeniden planlama politikası."""
+    """Episode and replanning policy."""
 
     timeout_s: float = 25.0
     replan_gate_delta_m: float = 0.005
@@ -87,7 +87,7 @@ class RuntimeSettings:
 
 @dataclass(frozen=True)
 class FeedbackProfile:
-    """Kademeli denetleyiciye çözümlenen eski biçimli kazançlar."""
+    """Legacy-style gains resolved into the cascaded controller."""
 
     kp: Array3
     ki: Array3
@@ -97,7 +97,7 @@ class FeedbackProfile:
 
 @dataclass(frozen=True)
 class FeedbackSettings:
-    """PID sınırları ve sektör kazanç tabloları."""
+    """PID limits and sector gain tables."""
 
     outer_clamp: Array3 = field(
         default_factory=lambda: np.array([2.4, 2.35, 1.8], dtype=np.float64)
@@ -144,7 +144,7 @@ class FeedbackSettings:
 
 @dataclass(frozen=True)
 class CommandSettings:
-    """Feedforward, attitude ve nihai eylem sınırları."""
+    """Feedforward, attitude, and final action limits."""
 
     lateral_accel_limit: float = 16.0
     feedforward_scale: float = 0.75
@@ -157,7 +157,7 @@ class CommandSettings:
 
 @dataclass(frozen=True)
 class ControllerSettings:
-    """Denetleyici tarafından kullanılan tüm ayarlanabilir değerler."""
+    """All configurable values used by the controller."""
 
     planner: PlannerSettings = field(default_factory=PlannerSettings)
     runtime: RuntimeSettings = field(default_factory=RuntimeSettings)

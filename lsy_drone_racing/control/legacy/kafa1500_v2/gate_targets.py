@@ -8,14 +8,14 @@ from typing import TYPE_CHECKING
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
-from lsy_drone_racing.control.kafa1500_v2.types import GateFrame
-from lsy_drone_racing.control.kafa1500_v2.utils import normalize
+from lsy_drone_racing.control.legacy.kafa1500_v2.types import GateFrame
+from lsy_drone_racing.control.legacy.kafa1500_v2.utils import normalize
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
-    from lsy_drone_racing.control.kafa1500_v2.config import PathConfig
-    from lsy_drone_racing.control.kafa1500_v2.types import Observation, Vec3
+    from lsy_drone_racing.control.legacy.kafa1500_v2.config import PathConfig
+    from lsy_drone_racing.control.legacy.kafa1500_v2.types import Observation, Vec3
 
 
 @dataclass(frozen=True, slots=True)

@@ -7,13 +7,13 @@ from typing import TYPE_CHECKING
 import numpy as np
 from scipy.interpolate import CubicHermiteSpline
 
-from lsy_drone_racing.control.kafa1500_attitude.types import CubicPath
-from lsy_drone_racing.control.kafa1500_attitude.utils import arc_params, cumulative_lengths, dedupe
+from lsy_drone_racing.control.legacy.kafa1500_attitude.types import CubicPath
+from lsy_drone_racing.control.legacy.kafa1500_attitude.utils import arc_params, cumulative_lengths, dedupe
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
-    from lsy_drone_racing.control.kafa1500_attitude.config import PathConfig
+    from lsy_drone_racing.control.legacy.kafa1500_attitude.config import PathConfig
 
 
 class CubicPathBuilder:

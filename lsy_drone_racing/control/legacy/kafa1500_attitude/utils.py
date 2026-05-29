@@ -9,7 +9,7 @@ import numpy as np
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
-    from lsy_drone_racing.control.kafa1500_attitude.types import Vec3
+    from lsy_drone_racing.control.legacy.kafa1500_attitude.types import Vec3
 
 
 def normalize(vec: Vec3, fallback: Vec3) -> Vec3:

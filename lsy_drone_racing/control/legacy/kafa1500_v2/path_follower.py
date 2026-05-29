@@ -6,14 +6,14 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from lsy_drone_racing.control.kafa1500_v2.attitude_feedback import AttitudeFeedback
-from lsy_drone_racing.control.kafa1500_v2.reference_manager import ReferenceManager
+from lsy_drone_racing.control.legacy.kafa1500_v2.attitude_feedback import AttitudeFeedback
+from lsy_drone_racing.control.legacy.kafa1500_v2.reference_manager import ReferenceManager
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
-    from lsy_drone_racing.control.kafa1500_v2.config import FeedbackConfig, ReferenceConfig
-    from lsy_drone_racing.control.kafa1500_v2.types import CubicPath, Observation, Reference, Vec3
+    from lsy_drone_racing.control.legacy.kafa1500_v2.config import FeedbackConfig, ReferenceConfig
+    from lsy_drone_racing.control.legacy.kafa1500_v2.types import CubicPath, Observation, Reference, Vec3
 
 
 class PathFollower:

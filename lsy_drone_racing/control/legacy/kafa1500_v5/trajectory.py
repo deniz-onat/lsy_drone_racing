@@ -1,4 +1,4 @@
-"""KaFa_1500_v5 için sektör referans planlaması."""
+"""Sector reference planning for KaFa_1500_v5."""
 # ruff: noqa: TC001, TC002
 
 from __future__ import annotations
@@ -10,12 +10,12 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.interpolate import CubicSpline, PchipInterpolator
 
-from lsy_drone_racing.control.kafa1500_v5.geometry import (
+from lsy_drone_racing.control.legacy.kafa1500_v5.geometry import (
     gate_axis,
     gate_entry_exit,
     horizontal_unit,
 )
-from lsy_drone_racing.control.kafa1500_v5.settings import (
+from lsy_drone_racing.control.legacy.kafa1500_v5.settings import (
     DEFAULT_OBSTACLES,
     GATE1_ARC_POINTS,
     ROUTE2_MIDPOINT,
@@ -24,14 +24,14 @@ from lsy_drone_racing.control.kafa1500_v5.settings import (
     PlannerSettings,
     SpeedProfile,
 )
-from lsy_drone_racing.control.kafa1500_v5.state import DroneObservation
+from lsy_drone_racing.control.legacy.kafa1500_v5.state import DroneObservation
 
 ReferenceCurve = CubicSpline | PchipInterpolator
 
 
 @dataclass(frozen=True)
 class ReferencePlan:
-    """Mutlak denetleyici zamanında ifade edilen sektör yerel bir plan."""
+    """Sector-local plan expressed in absolute controller time."""
 
     sector: int
     curve: ReferenceCurve
@@ -44,7 +44,7 @@ class ReferencePlan:
 def knot_times(
     t_start: float, t_end: float, waypoints: NDArray[np.float64], profile: SpeedProfile, eps: float
 ) -> NDArray[np.float64]:
-    """Parçalı bir hız profilinden düzgün olmayan ara nokta zamanları dağıtır."""
+    """Distribute non-uniform waypoint times from a piecewise speed profile."""
     pts = np.asarray(waypoints, dtype=np.float64)
     if pts.ndim != 2:
         raise ValueError(f"waypoints must be 2-D, got {pts.shape}")
@@ -65,10 +65,10 @@ def knot_times(
 
 
 class RouteOverrides:
-    """Belirli dosya yoksa deterministik davranan isteğe bağlı harici XY rota düzenlemeleri."""
+    """Optional external XY route edits that stay deterministic when the file is absent."""
 
     def __init__(self, settings: PlannerSettings):
-        """Rota geçersiz kılmalarını denetleyici başlangıcında bir kez yükler."""
+        """Load route overrides once at controller startup."""
         self._settings = settings
         self._routes = self._read_file()
 
@@ -98,7 +98,7 @@ class RouteOverrides:
         default_waypoints: NDArray[np.float64],
         extra_point: NDArray[np.float64] | None,
     ) -> NDArray[np.float64]:
-        """Bir kaçınma noktası eklenmiyorsa sektör geçersiz kılmasını uygular."""
+        """Apply a sector override unless an avoidance point is being inserted."""
         if self._routes is None or extra_point is not None:
             return default_waypoints
         override = self._routes[sector]
@@ -134,17 +134,17 @@ def _interpolate_z(
 
 
 class SectorReferenceBuilder:
-    """Rota ara noktalarını, zamanlamayı, interpolatörleri ve açıklık noktalarını oluşturur."""
+    """Build route waypoints, timing, interpolators, and clearance points."""
 
     def __init__(self, settings: PlannerSettings):
-        """Rota oluşturmayı ve isteğe bağlı geçersiz kılma işlemini başlatır."""
+        """Initialize route generation and optional override handling."""
         self._settings = settings
         self._overrides = RouteOverrides(settings)
 
     def build(
         self, sector: int, gate_pos: NDArray[np.float64], gate_rpy: NDArray[np.float64]
     ) -> ReferencePlan:
-        """Bir hedef kapı sektörü için eksiksiz bir referans planı oluşturur."""
+        """Build a complete reference plan for a target gate sector."""
         return self._build_recursive(sector, gate_pos, gate_rpy, extra_point=None, depth=0)
 
     def _build_recursive(
@@ -298,12 +298,12 @@ class SectorReferenceBuilder:
 
 
 class ReferenceManager:
-    """Etkin sektör planlarını ve yeniden planlama tetikleyicilerini yönetir."""
+    """Manage active sector plans and replanning triggers."""
 
     def __init__(
         self, settings: PlannerSettings, runtime_near_gate_xy_m: float, gate_delta_m: float
     ):
-        """Belgelendirilmiş kapı yakını yeniden planlama eşikleriyle bir yöneticiyi oluşturur."""
+        """Create a manager with documented near-gate replanning thresholds."""
         self._builder = SectorReferenceBuilder(settings)
         self._near_gate_xy_m = float(runtime_near_gate_xy_m)
         self._gate_delta_m = float(gate_delta_m)
@@ -312,16 +312,16 @@ class ReferenceManager:
 
     @property
     def plan(self) -> ReferencePlan | None:
-        """Varsa, etkin plan."""
+        """The active plan, if one exists."""
         return self._plan
 
     def reset(self) -> None:
-        """Önbelleğe alınmış planları ve planlanmış kapı konumlarını unutur."""
+        """Forget cached plans and planned gate positions."""
         self._plan = None
         self._planned_gate_pos = None
 
     def ensure_plan(self, frame: DroneObservation, gate_rpy: NDArray[np.float64]) -> ReferencePlan:
-        """Etkin bir plan döndürür, sektör veya kapı gözlemleri değiştiğinde yeniden oluşturur."""
+        """Return an active plan, rebuilding when sector or gate observations change."""
         if self._needs_plan(frame):
             self._plan = self._builder.build(frame.target_gate, frame.gate_pos, gate_rpy)
             self._planned_gate_pos = frame.gate_pos.copy()
