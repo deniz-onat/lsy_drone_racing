@@ -86,6 +86,12 @@ def build_spline(
     segment_lengths = np.linalg.norm(np.diff(waypoints, axis=0), axis=1)
     inter_speed = settings.v_cruise_inter if settings.v_cruise_inter > 0 else settings.v_cruise
     cold_start = float(np.linalg.norm(start_vel)) < 0.3
+    # A negative start_vel.z at low altitude clamps the BC to a downward slope and
+    # drives the spline below z=0.  Force the z-component non-negative whenever the
+    # drone is near the floor and nearly stationary so the spline opens upward.
+    if cold_start and float(waypoints[0, 2]) <= settings.liftoff_z_threshold:
+        start_vel = start_vel.copy()
+        start_vel[2] = max(float(start_vel[2]), 0.0)
     segment_times = np.empty(len(segment_lengths), dtype=np.float64)
     for index in range(len(segment_lengths)):
         peri = any(
