@@ -11,6 +11,8 @@ KaFa_1500_v6.py and all kafa1500_v6/ submodules are NOT modified.
 
 Modes
 -----
+TAKEOFF : initial mode.  Hold the start x/y and climb straight up to a fixed
+          altitude (_TAKEOFF_ALT), then hand off to SEARCH.
 SEARCH  : outward Archimedean spiral at 1.0 m altitude.  Spiral waypoints are
           treated as virtual gates; only detected obstacles are passed.
 NAVIGATE: plan through all contiguously discovered real gates, avoiding only
@@ -42,7 +44,7 @@ if TYPE_CHECKING:
 # ── Spiral / search constants ─────────────────────────────────────────────────
 # Arena safety limits from level3.toml: x ∈ [-2.5, 2.5], y ∈ [-1.5, 1.5].
 # We keep 0.3 m inside the hard limits on each axis.
-_SEARCH_ALT = 1.0           # m — between gate heights 0.7 m and 1.2 m
+_SEARCH_ALT = 1.8           # m — between gate heights 0.7 m and 1.2 m
 _SPIRAL_RADIAL_STEP = 0.6   # m radial gap per revolution; < 2 × 0.7 m sensor range
 _SPIRAL_ANGLE_STEP = np.pi / 6   # 30° step = 12 waypoints per revolution
 _SPIRAL_ADVANCE_RADIUS = 0.6     # m (2-D) — advance to next spiral point when this close
@@ -54,11 +56,16 @@ _GATE_SKIP_RADIUS = 1.85    # m — skip spiral waypoints within this XY distanc
 # edge so the gate-centre waypoint (0.36 m away) stays outside the 0.32 m spline-repair
 # trigger threshold, while still blocking paths that would clip the frame bars.
 _GATE_POST_OFFSET = 0.36    # m — lateral offset from gate centre to each virtual column
+# ── Takeoff constants ─────────────────────────────────────────────────────────
+_TAKEOFF_ALT = 1.8          # m — straight-up climb target before SEARCH begins (tunable)
+_TAKEOFF_Z_TOL = 0.05       # m — switch to SEARCH when within this of _TAKEOFF_ALT
+_TAKEOFF_TIME_MARGIN = 1.0  # s — fallback handoff after the takeoff spline overruns by this
 
 
-class KaFaLevel3V1(Controller):
+class KaFa1500V7(Controller):
     """Search-then-navigate controller for Level-3 (fully random gate positions)."""
 
+    _MODE_TAKEOFF = "TAKEOFF"
     _MODE_SEARCH = "SEARCH"
     _MODE_NAVIGATE = "NAVIGATE"
     _MODE_HOME = "HOME"
@@ -68,7 +75,7 @@ class KaFaLevel3V1(Controller):
         """Initialise timing, drone parameters, PID, reference manager, and spiral."""
         super().__init__(obs, info, config)
         if config.env.control_mode != "attitude":
-            raise ValueError("KaFaLevel3V1 requires env.control_mode = 'attitude'.")
+            raise ValueError("KaFa1500V7 requires env.control_mode = 'attitude'.")
         # Navigate settings: wider gate approach funnel reduces spline curvature at
         # the gate plane, keeping the trajectory closer to the opening center.
         self._settings = ControllerSettings(planner=PlannerSettings(d_pre=0.60, d_post=0.40))
@@ -99,10 +106,12 @@ class KaFaLevel3V1(Controller):
         self._finished = False
         self._last_action = self._hover_action()
         self._last_target = -1
-        self._mode = self._MODE_SEARCH
+        self._mode = self._MODE_TAKEOFF
         self._known_gates: set[int] = set()
         self._last_last_known = -1
         self._virtual_target = 0
+        self._takeoff_plan: tuple | None = None
+        self._takeoff_start_tick = 0
         self._home_plan: tuple | None = None
         self._home_start_tick = 0
         # Debug visualisation state — written by compute_control, read by render_callback
@@ -157,7 +166,9 @@ class KaFaLevel3V1(Controller):
             self._plan_start_tick = self._tick
 
         # ── Dispatch ────────────────────────────────────────────────────────
-        if self._mode == self._MODE_SEARCH:
+        if self._mode == self._MODE_TAKEOFF:
+            action = self._takeoff_action(frame, obs_visited)
+        elif self._mode == self._MODE_SEARCH:
             action = self._search_action(frame, obs_visited)
         elif self._mode == self._MODE_NAVIGATE:
             action = self._navigate_action(frame, obs_visited)
@@ -198,15 +209,69 @@ class KaFaLevel3V1(Controller):
 
         return action
 
+    # ── TAKEOFF mode ─────────────────────────────────────────────────────────
+
+    def _takeoff_action(self, frame: DroneObservation, obs_visited: NDArray) -> NDArray:
+        """Climb straight up (holding start x/y) to _TAKEOFF_ALT, then hand off to SEARCH.
+
+        Reuses the same build_spline + attitude_action machinery as HOME mode: a
+        2-waypoint vertical spline whose endpoints share the start x/y so the clamped
+        cubic only moves in z.  The shared PID is intentionally NOT reset at handoff so
+        the thrust integrator stays continuous into SEARCH.
+        """
+        clock_t = (self._tick - self._takeoff_start_tick) * self._dt
+        t_total = self._takeoff_plan[1] if self._takeoff_plan is not None else 0.0
+        reached = float(frame.pos[2]) >= _TAKEOFF_ALT - _TAKEOFF_Z_TOL
+        overran = self._takeoff_plan is not None and clock_t >= t_total + _TAKEOFF_TIME_MARGIN
+        if reached or overran:
+            self._mode = self._MODE_SEARCH
+            self._virtual_target = self._find_nearest_spiral(frame.pos)
+            self._search_references.reset()
+            self._progress_t = 0.0
+            self._plan_start_tick = self._tick
+            return self._search_action(frame, obs_visited)
+
+        if self._takeoff_plan is None:
+            start = np.asarray(frame.pos, dtype=np.float64).copy()
+            target = np.array([start[0], start[1], _TAKEOFF_ALT])  # hold x/y, climb in z
+            waypoints = np.array([start, target])
+            det_obs = (
+                frame.obstacles_pos[obs_visited] if obs_visited.any() else np.empty((0, 3))
+            )
+            knot_times, curve = build_spline(
+                waypoints,
+                np.asarray(frame.vel, dtype=np.float64),
+                np.empty((0, 3)),
+                det_obs,
+                self._settings.planner,
+            )
+            self._takeoff_plan = (curve, float(knot_times[-1]))
+            self._takeoff_start_tick = self._tick
+            clock_t = 0.0
+
+        curve, t_total = self._takeoff_plan
+        t_eval = float(np.clip(clock_t, 0.0, t_total))
+        action, _ = attitude_action(
+            curve, t_eval, frame.pos, frame.vel, frame.quat,
+            self._feedback, self._dt, self._mass,
+            self._settings.runtime.gravity, self._settings.command,
+        )
+        self._last_action = action
+        return action.copy()
+
     # ── SEARCH mode ──────────────────────────────────────────────────────────
 
     def _search_action(self, frame: DroneObservation, obs_visited: NDArray) -> NDArray:
-        # Only pass sensor-confirmed obstacles to the planner.
-        # Level-3 nominal obstacle positions are all [0,0,1.55] and must be excluded.
-        det_obs = frame.obstacles_pos[obs_visited] if obs_visited.any() else np.empty((0, 3))
-        gate_obs = self._gate_post_obstacles(frame)
-        if len(gate_obs):
-            det_obs = np.concatenate([det_obs, gate_obs], axis=0)
+        del obs_visited  # unused in SEARCH: the search path is left unconstrained (see below)
+        # SEARCH flies the sweep above the track, so the search path is left fully
+        # unconstrained: no obstacles (real OR virtual gate-frame) are passed to the
+        # planner.  NAVIGATE keeps the full avoidance logic (see _navigate_action).
+        # Disabled SEARCH-only avoidance (kept for easy revert):
+        # det_obs = frame.obstacles_pos[obs_visited] if obs_visited.any() else np.empty((0, 3))
+        # gate_obs = self._gate_post_obstacles(frame)
+        # if len(gate_obs):
+        #     det_obs = np.concatenate([det_obs, gate_obs], axis=0)
+        det_obs = np.empty((0, 3))
 
         # Advance the virtual target when the drone is close enough in 2-D
         vt = self._virtual_target
@@ -220,26 +285,28 @@ class KaFaLevel3V1(Controller):
             self._progress_t = 0.0
             self._plan_start_tick = self._tick
 
-        # Skip spiral waypoints that land within _GATE_SKIP_RADIUS of any detected gate.
-        # Spiral waypoints become protected gate-centre waypoints inside the planner and
-        # cannot be moved by push_off_obstacles — so the only safe fix is to not target them.
-        if self._known_gates:
-            gate_xys = frame.gate_pos[sorted(self._known_gates), :2]
-            n_wps = len(self._spiral_wps)
-            advances = 0
-            while advances < _SPIRAL_HORIZON:
-                vt = self._virtual_target
-                if vt >= n_wps - 1:
-                    break
-                dists = np.linalg.norm(gate_xys - self._spiral_wps[vt, :2], axis=1)
-                if dists.min() < _GATE_SKIP_RADIUS:
-                    self._virtual_target = vt + 1
-                    self._search_references.reset()
-                    self._progress_t = 0.0
-                    self._plan_start_tick = self._tick
-                    advances += 1
-                else:
-                    break
+        # SEARCH-only gate-avoidance heuristic — DISABLED.  This block skipped spiral
+        # waypoints within _GATE_SKIP_RADIUS of a detected gate (because such waypoints
+        # become protected gate-centre waypoints the planner can't push off).  With the
+        # search path now unconstrained the spiral no longer routes around gates, so the
+        # skip is unnecessary.  Kept commented for easy revert.  NAVIGATE is unaffected.
+        # if self._known_gates:
+        #     gate_xys = frame.gate_pos[sorted(self._known_gates), :2]
+        #     n_wps = len(self._spiral_wps)
+        #     advances = 0
+        #     while advances < _SPIRAL_HORIZON:
+        #         vt = self._virtual_target
+        #         if vt >= n_wps - 1:
+        #             break
+        #         dists = np.linalg.norm(gate_xys - self._spiral_wps[vt, :2], axis=1)
+        #         if dists.min() < _GATE_SKIP_RADIUS:
+        #             self._virtual_target = vt + 1
+        #             self._search_references.reset()
+        #             self._progress_t = 0.0
+        #             self._plan_start_tick = self._tick
+        #             advances += 1
+        #         else:
+        #             break
 
         # If the detected-obstacle count changed the stored snapshot has a different
         # shape and trajectory._needs_plan would raise a numpy shape error — rebuild.
@@ -463,10 +530,12 @@ class KaFaLevel3V1(Controller):
         self._progress_t = 0.0
         self._finished = False
         self._last_target = -1
-        self._mode = self._MODE_SEARCH
+        self._mode = self._MODE_TAKEOFF
         self._known_gates = set()
         self._last_last_known = -1
         self._virtual_target = 0
+        self._takeoff_plan = None
+        self._takeoff_start_tick = 0
         self._home_plan = None
         self._home_start_tick = 0
         self._feedback.reset()
