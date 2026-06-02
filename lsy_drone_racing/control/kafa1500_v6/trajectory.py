@@ -43,11 +43,20 @@ class ReferencePlan:
 
 
 def _oriented_forward(
-    quat: NDArray[np.float64], gate_pos: NDArray[np.float64], reference: NDArray[np.float64]
+    quat: NDArray[np.float64],
+    gate_pos: NDArray[np.float64],
+    reference: NDArray[np.float64],
+    flip_to_travel: bool = True,
 ) -> NDArray[np.float64]:
-    """Return the gate forward axis flipped to point along the travel direction."""
+    """Return the gate forward axis.
+
+    When ``flip_to_travel`` is True (default) the axis is flipped to point along the travel
+    direction (from ``reference`` toward the gate). When False the gate's canonical +x axis
+    is returned unchanged, which is the direction the environment requires the gate to be
+    crossed in (gate-local -x -> +x).
+    """
     forward = Rotation.from_quat(quat).as_matrix()[:, 0]
-    if float(np.dot(forward, gate_pos - reference)) < 0.0:
+    if flip_to_travel and float(np.dot(forward, gate_pos - reference)) < 0.0:
         forward = -forward
     return forward
 
@@ -116,15 +125,19 @@ def _insert_exited_clearance(
     if float(np.linalg.norm(start_pos - prev_pos)) >= 0.6:
         return
     prev_forward = Rotation.from_quat(gates_quat[target_gate - 1]).as_matrix()[:, 0]
-    travel = np.array([start_vel[0], start_vel[1], 0.0])
-    if float(np.linalg.norm(travel)) > 0.1:
-        reference = float(np.dot(prev_forward, travel))
-    else:
-        reference = float(np.dot(prev_forward, gates_pos[target_gate] - prev_pos))
-    if reference < 0.0:
-        prev_forward = -prev_forward
+    if settings.orient_gates_to_travel:
+        travel = np.array([start_vel[0], start_vel[1], 0.0])
+        if float(np.linalg.norm(travel)) > 0.1:
+            reference = float(np.dot(prev_forward, travel))
+        else:
+            reference = float(np.dot(prev_forward, gates_pos[target_gate] - prev_pos))
+        if reference < 0.0:
+            prev_forward = -prev_forward
+    # else: keep the previous gate's canonical +x axis (the drone exits on that side).
     prev_exit = prev_pos + settings.d_post * prev_forward
-    next_forward = _oriented_forward(gates_quat[target_gate], gates_pos[target_gate], prev_exit)
+    next_forward = _oriented_forward(
+        gates_quat[target_gate], gates_pos[target_gate], prev_exit, settings.orient_gates_to_travel
+    )
     points = _clearance_points(
         prev_pos, prev_forward, gates_pos[target_gate], next_forward, settings
     )
@@ -170,7 +183,9 @@ def build_waypoints(
     reference = waypoints[-1]
     for index in range(n_gates):
         gate_pos = remaining_pos[index]
-        fwd = _oriented_forward(remaining_quat[index], gate_pos, reference)
+        fwd = _oriented_forward(
+            remaining_quat[index], gate_pos, reference, settings.orient_gates_to_travel
+        )
         forwards.append(fwd)
         reference = gate_pos + settings.d_post * fwd
     gate_indices: set[int] = set()

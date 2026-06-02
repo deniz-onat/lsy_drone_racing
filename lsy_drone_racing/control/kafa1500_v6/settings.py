@@ -28,6 +28,12 @@ class PlannerSettings:
     cold_start_min_seg: float = 0.45
     peri_gate_radius: float = 0.55
     clearance_height_delta: float = 0.15
+    # When True (default, Level-2 behavior) gate forward axes are flipped to match the
+    # drone's travel direction. When False the gate's canonical +x axis is used as the
+    # crossing direction — required for Level 3, where the env only counts a gate as
+    # passed when crossed from gate-local -x to +x (see envs/utils.py:gate_passed) and
+    # the randomizer orients every gate's +x along the intended traversal direction.
+    orient_gates_to_travel: bool = True
 
 
 @dataclass(frozen=True)
