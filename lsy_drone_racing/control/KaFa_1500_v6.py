@@ -9,10 +9,21 @@ from crazyflow.sim.visualize import draw_line
 from drone_models.core import load_params
 
 from lsy_drone_racing.control import Controller
-from lsy_drone_racing.control.KaFa_1500_cockpit import V_CRUISE, V_CRUISE_INTER, VMAX
+from lsy_drone_racing.control.KaFa_1500_cockpit import (
+    FEEDFORWARD_SCALE,
+    LATERAL_ACCEL_LIMIT,
+    T_MIN_SEG,
+    V_CRUISE,
+    V_CRUISE_INTER,
+    VMAX,
+)
 from lsy_drone_racing.control.kafa1500_v6.attitude import attitude_action
 from lsy_drone_racing.control.kafa1500_v6.feedback import CascadedPid
-from lsy_drone_racing.control.kafa1500_v6.settings import ControllerSettings, PlannerSettings
+from lsy_drone_racing.control.kafa1500_v6.settings import (
+    CommandSettings,
+    ControllerSettings,
+    PlannerSettings,
+)
 from lsy_drone_racing.control.kafa1500_v6.state import parse_observation
 from lsy_drone_racing.control.kafa1500_v6.trajectory import ReferenceManager
 
@@ -35,8 +46,15 @@ class KaFa1500V6(Controller):
         # kafa1500_v6/settings.py defaults (only the speeds are centrally tunable).
         self._settings = ControllerSettings(
             planner=PlannerSettings(
-                v_cruise=V_CRUISE, v_cruise_inter=V_CRUISE_INTER, max_speed=VMAX
-            )
+                v_cruise=V_CRUISE,
+                v_cruise_inter=V_CRUISE_INTER,
+                max_speed=VMAX,
+                t_min_seg=T_MIN_SEG,
+            ),
+            command=CommandSettings(
+                lateral_accel_limit=LATERAL_ACCEL_LIMIT,
+                feedforward_scale=FEEDFORWARD_SCALE,
+            ),
         )
         self._freq = float(config.env.freq)
         self._dt = 1.0 / self._freq
@@ -55,6 +73,12 @@ class KaFa1500V6(Controller):
         self._last_time = 0.0
         self._last_target = -1
         self._last_action = self._hover_action()
+        # Debug visualisation state — written by compute_control, read by render_callback
+        self._dbg_gate_pos: NDArray = np.empty((0, 3), dtype=np.float64)
+        self._dbg_known_mask: NDArray = np.zeros(0, dtype=bool)
+        self._dbg_target_gate: int = -1
+        self._dbg_obs_pos: NDArray = np.empty((0, 3), dtype=np.float64)
+        self._dbg_wp_pos: NDArray = np.empty((0, 3), dtype=np.float64)
 
     def compute_control(
         self, obs: dict[str, NDArray[np.floating]], info: dict | None = None
@@ -95,6 +119,28 @@ class KaFa1500V6(Controller):
             self._settings.command,
         )
         self._last_action = action
+
+        # ── DEBUG VISUALISATION ──────────────────────────────────────────────
+        # Capture marker state here; render_callback draws it using draw_line.
+        self._dbg_gate_pos = np.asarray(frame.gate_pos, dtype=np.float64)
+        gates_visited = np.asarray(obs.get("gates_visited", []), dtype=bool).reshape(-1)
+        known_mask = np.zeros(len(frame.gate_pos), dtype=bool)
+        known_mask[: len(gates_visited)] = gates_visited[: len(known_mask)]
+        self._dbg_known_mask = known_mask
+        self._dbg_target_gate = int(frame.target_gate)
+        obs_visited = np.asarray(obs.get("obstacles_visited", []), dtype=bool).reshape(-1)
+        if obs_visited.any() and len(obs_visited) <= len(frame.obstacles_pos):
+            self._dbg_obs_pos = np.asarray(
+                frame.obstacles_pos[: len(obs_visited)][obs_visited], dtype=np.float64
+            )
+        else:
+            self._dbg_obs_pos = np.empty((0, 3), dtype=np.float64)
+        # Planned waypoints: points sampled along the active reference spline
+        n_samples = min(10, plan.t_total * 5)
+        t_pts = np.linspace(0.0, plan.t_total, max(2, int(n_samples)))
+        self._dbg_wp_pos = np.asarray(plan.curve(t_pts), dtype=np.float64)
+        # ── END DEBUG VISUALISATION ──────────────────────────────────────────
+
         return action.copy()
 
     def _project(self, plan: ReferencePlan, pos: NDArray[np.floating]) -> float:
@@ -138,12 +184,43 @@ class KaFa1500V6(Controller):
         self.reset()
 
     def render_callback(self, sim: Sim) -> None:
-        """Draw the active reference spline for debugging."""
+        """Draw the active reference spline and debug markers."""
         plan = self._references.plan
-        if plan is None:
-            return
-        samples = plan.curve(np.linspace(0.0, plan.t_total, 100))
-        draw_line(sim, np.asarray(samples, dtype=np.float32), rgba=(0.0, 1.0, 0.0, 1.0))
+        if plan is not None:
+            samples = plan.curve(np.linspace(0.0, plan.t_total, 100))
+            draw_line(sim, np.asarray(samples, dtype=np.float32), rgba=(0.0, 1.0, 0.0, 1.0))
+
+        # ── DEBUG VISUALISATION ──────────────────────────────────────────────
+        arm = 0.08  # half-length of each cross arm in metres
+
+        def _cross(pos: NDArray, rgba: tuple) -> None:
+            """Draw a 3-axis cross at pos using three two-point draw_line calls."""
+            p = np.asarray(pos, dtype=np.float32)
+            for axis in range(3):
+                seg = np.zeros((2, 3), dtype=np.float32)
+                seg[0] = p
+                seg[1] = p
+                seg[0, axis] -= arm
+                seg[1, axis] += arm
+                draw_line(sim, seg, rgba=rgba)
+
+        # Green crosses at detected gate centres; bright green for current target
+        for i, gp in enumerate(self._dbg_gate_pos):
+            if not self._dbg_known_mask[i]:
+                continue
+            if i == self._dbg_target_gate:
+                _cross(gp, rgba=(0.0, 1.0, 0.0, 1.0))   # bright green — target gate
+            else:
+                _cross(gp, rgba=(0.0, 0.55, 0.0, 1.0))  # dim green — other known gates
+
+        # Red crosses at detected (sensor-confirmed) obstacle positions
+        for op in self._dbg_obs_pos:
+            _cross(op, rgba=(1.0, 0.0, 0.0, 1.0))
+
+        # Blue crosses at current planned waypoints
+        for wp in self._dbg_wp_pos:
+            _cross(wp, rgba=(0.2, 0.4, 1.0, 1.0))
+        # ── END DEBUG VISUALISATION ──────────────────────────────────────────
 
     def diagnostic(self) -> dict[str, float | int | str | None]:
         """Return a short status summary for debugging and logging."""

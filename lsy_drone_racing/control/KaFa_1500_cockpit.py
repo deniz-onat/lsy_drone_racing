@@ -16,12 +16,38 @@ from __future__ import annotations
 
 import numpy as np
 
+
 # ── Shared NAVIGATE velocity constants (used by BOTH v6 and v7) ─────────────────
 # These are v6's tuned values. v7 NAVIGATE shares them (its previous 1.0/1.0/1.4
 # is superseded). v7's SEARCH speeds remain separate (see below).
-V_CRUISE = 0.9          # m/s — cruise speed near gates (peri-gate; keep low for precision)
-V_CRUISE_INTER = 1.0    # m/s — cruise speed BETWEEN gates (raise for faster traversal)
-VMAX = 1.3              # m/s — peak-velocity cap
+V_CRUISE = 1.1              # m/s — cruise speed near gates (peri-gate; keep low for precision)
+V_CRUISE_INTER = 1.7        # m/s — cruise speed BETWEEN gates (raise for faster traversal)
+VMAX = 2.3                  # m/s — peak-velocity cap
+
+# ── Shared spline-timing & stability tuning (used by BOTH v6 and v7 NAVIGATE) ───
+# These were previously buried in kafa1500_v6/{settings,timing}.py. They are the
+# "go faster while staying stable" levers that pair with the velocity constants
+# above. Defaults equal the historical hard-coded values (pure refactor).
+#
+# Short-segment time floor (s). Any segment shorter than speed × T_MIN_SEG is
+# time-floored — i.e. flown SLOWER than cruise regardless of the speeds above.
+# Lower => short straights (and the gate run-in/run-out) may go faster; too low
+# risks jerk at the gate plane. Move this in isolation when sweeping speeds.
+T_MIN_SEG = 0.30
+# turn_slowdown: corners sharper than TURN_MIN_SHARPNESS (0 straight … 1 reversal)
+# get their duration stretched by (1 + TURN_SLOW_GAIN × sharpness). This is the
+# auto-protection that lets VMAX rise without clipping frames on bends — raise the
+# gain (or lower the threshold) as speeds go up; lower it to carry more speed
+# through corners. Per the v6 tuning history, turn_slowdown is load-bearing for
+# the Level-2 finish rate, so change it carefully.
+TURN_MIN_SHARPNESS = 0.4
+TURN_SLOW_GAIN = 0.6
+# Tracker authority — how hard the feedforward may push to follow a fast, curved
+# reference. If raising the speeds produces corner-cutting / frame clips (the
+# reference outrunning the tracker), raise LATERAL_ACCEL_LIMIT; too high amplifies
+# tracking noise. FEEDFORWARD_SCALE blends model feedforward into the command.
+LATERAL_ACCEL_LIMIT = 8.0
+FEEDFORWARD_SCALE = 0.6
 
 # ── v7 SEARCH velocity constants (v7 only — kept separate from the shared set) ──
 V_CRUISE_SEARCH = 2.5   # SEARCH cruise speed near (spiral) waypoints
@@ -58,7 +84,7 @@ GATE_POST_OFFSET = 0.30    # m — lateral offset from gate centre to each virtu
 # at r_obs=0.12). This was the change that pushed the Level-3 finish rate to 50%.
 
 # ── v7 Takeoff constants ────────────────────────────────────────────────────────
-TAKEOFF_ALT = 1.8          # m — straight-up climb target before SEARCH begins (tunable)
+TAKEOFF_ALT = 1          # m — straight-up climb target before SEARCH begins (tunable)
 TAKEOFF_Z_TOL = 0.05       # m — switch to SEARCH when within this of TAKEOFF_ALT
 TAKEOFF_TIME_MARGIN = 1.0  # s — fallback handoff after the takeoff spline overruns by this
 

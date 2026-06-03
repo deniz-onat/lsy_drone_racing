@@ -12,6 +12,11 @@ from typing import TYPE_CHECKING
 import numpy as np
 from scipy.interpolate import CubicSpline
 
+from lsy_drone_racing.control.KaFa_1500_cockpit import (
+    TURN_MIN_SHARPNESS,
+    TURN_SLOW_GAIN,
+)
+
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
@@ -48,8 +53,8 @@ def obstacle_slowdown(
 def turn_slowdown(
     waypoints: NDArray[np.floating],
     segment_times: NDArray[np.floating],
-    min_sharpness: float = 0.4,
-    slow_gain: float = 0.6,
+    min_sharpness: float = TURN_MIN_SHARPNESS,
+    slow_gain: float = TURN_SLOW_GAIN,
 ) -> NDArray[np.floating]:
     """Stretch the segments around sharp corners so reversals/hairpins are flown slower.
 

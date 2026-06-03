@@ -49,7 +49,9 @@ from lsy_drone_racing.control.KaFa_1500_cockpit import (
     ARENA_X_LIM as _ARENA_X_LIM,
     ARENA_Y_LIM as _ARENA_Y_LIM,
     DISCOVER_ALL_FIRST as _DISCOVER_ALL_FIRST,
+    FEEDFORWARD_SCALE as _FEEDFORWARD_SCALE,
     GATE_POST_OFFSET as _GATE_POST_OFFSET,
+    LATERAL_ACCEL_LIMIT as _LATERAL_ACCEL_LIMIT,
     NAV_D_POST as _NAV_D_POST,
     NAV_D_PRE as _NAV_D_PRE,
     NAV_LOOKAHEAD as _NAV_LOOKAHEAD,
@@ -62,6 +64,7 @@ from lsy_drone_racing.control.KaFa_1500_cockpit import (
     SPIRAL_HORIZON as _SPIRAL_HORIZON,
     SPIRAL_OUTWARD as _SPIRAL_OUTWARD,
     SPIRAL_RADIAL_STEP as _SPIRAL_RADIAL_STEP,
+    T_MIN_SEG as _T_MIN_SEG,
     TAKEOFF_ALT as _TAKEOFF_ALT,
     TAKEOFF_TIME_MARGIN as _TAKEOFF_TIME_MARGIN,
     TAKEOFF_Z_TOL as _TAKEOFF_Z_TOL,
@@ -74,6 +77,7 @@ from lsy_drone_racing.control.KaFa_1500_cockpit import (
 from lsy_drone_racing.control.kafa1500_v6.attitude import attitude_action
 from lsy_drone_racing.control.kafa1500_v6.feedback import CascadedPid
 from lsy_drone_racing.control.kafa1500_v6.settings import (
+    CommandSettings,
     ControllerSettings,
     PlannerSettings,
     RuntimeSettings,
@@ -112,6 +116,11 @@ class KaFa1500V7(Controller):
                 d_pre=_NAV_D_PRE, d_post=_NAV_D_POST, v_cruise=_V_CRUISE,
                 v_cruise_inter=_V_CRUISE_INTER, max_speed=_VMAX,
                 r_obs=_NAV_R_OBS, orient_gates_to_travel=False,
+                t_min_seg=_T_MIN_SEG,
+            ),
+            command=CommandSettings(
+                lateral_accel_limit=_LATERAL_ACCEL_LIMIT,
+                feedforward_scale=_FEEDFORWARD_SCALE,
             ),
             runtime=RuntimeSettings(lookahead_s=_NAV_LOOKAHEAD),
         )
