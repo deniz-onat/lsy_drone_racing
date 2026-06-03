@@ -16,12 +16,11 @@ from __future__ import annotations
 
 import numpy as np
 
-
 # ── Shared NAVIGATE velocity constants (used by BOTH v6 and v7) ─────────────────
 # These are v6's tuned values. v7 NAVIGATE shares them (its previous 1.0/1.0/1.4
 # is superseded). v7's SEARCH speeds remain separate (see below).
-V_CRUISE = 1.1              # m/s — cruise speed near gates (peri-gate; keep low for precision)
-V_CRUISE_INTER = 1.7        # m/s — cruise speed BETWEEN gates (raise for faster traversal)
+V_CRUISE = 1.2              # m/s — cruise speed near gates (peri-gate; keep low for precision)
+V_CRUISE_INTER = 1.8        # m/s — cruise speed BETWEEN gates (raise for faster traversal)
 VMAX = 2.3                  # m/s — peak-velocity cap
 
 # ── Shared spline-timing & stability tuning (used by BOTH v6 and v7 NAVIGATE) ───
@@ -33,7 +32,7 @@ VMAX = 2.3                  # m/s — peak-velocity cap
 # time-floored — i.e. flown SLOWER than cruise regardless of the speeds above.
 # Lower => short straights (and the gate run-in/run-out) may go faster; too low
 # risks jerk at the gate plane. Move this in isolation when sweeping speeds.
-T_MIN_SEG = 0.30
+T_MIN_SEG = 0.35
 # turn_slowdown: corners sharper than TURN_MIN_SHARPNESS (0 straight … 1 reversal)
 # get their duration stretched by (1 + TURN_SLOW_GAIN × sharpness). This is the
 # auto-protection that lets VMAX rise without clipping frames on bends — raise the
@@ -48,6 +47,21 @@ TURN_SLOW_GAIN = 0.6
 # tracking noise. FEEDFORWARD_SCALE blends model feedforward into the command.
 LATERAL_ACCEL_LIMIT = 8.0
 FEEDFORWARD_SCALE = 0.6
+
+# ── v6 Takeoff phase (v6 only — dedicated vertical climb before gate tracking) ──
+# v6 leaves the ground with a clean rest-to-altitude VERTICAL climb (holding the
+# start x/y), then hands off to gate tracking from a stable near-hover. This
+# decouples lift-off from the global gate spline: without it the C²-continuous
+# spline ramps vertical acceleration to whatever the downstream cruise speed
+# demands, so raising the speeds whips the drone off the ground (large vertical
+# thrust swing at low altitude → instability). With the phase, takeoff aggressiveness
+# is independent of cruise speed. (v7 already has its own TAKEOFF mode below.)
+V6_TAKEOFF_ALT = 0.5            # m — climb target before gate tracking begins
+V6_TAKEOFF_CLIMB_SPEED = 0.9   # m/s — average vertical climb speed (peak ≈ 1.5×).
+# Lower => gentler lift-off (peak vertical accel ≈ 6 × height / t_climb²). 0.9 m/s
+# over ~0.9 m gives ~5 m/s² peak — well within thrust authority and no thrust cutoff.
+V6_TAKEOFF_Z_TOL = 0.05        # m — hand off to tracking within this of the target altitude
+V6_TAKEOFF_TIME_MARGIN = 1.0   # s — fallback handoff after the climb spline overruns by this
 
 # ── v7 SEARCH velocity constants (v7 only — kept separate from the shared set) ──
 V_CRUISE_SEARCH = 2.5   # SEARCH cruise speed near (spiral) waypoints

@@ -9,14 +9,6 @@ from crazyflow.sim.visualize import draw_line
 from drone_models.core import load_params
 
 from lsy_drone_racing.control import Controller
-from lsy_drone_racing.control.KaFa_1500_cockpit import (
-    FEEDFORWARD_SCALE,
-    LATERAL_ACCEL_LIMIT,
-    T_MIN_SEG,
-    V_CRUISE,
-    V_CRUISE_INTER,
-    VMAX,
-)
 from lsy_drone_racing.control.kafa1500_v6.attitude import attitude_action
 from lsy_drone_racing.control.kafa1500_v6.feedback import CascadedPid
 from lsy_drone_racing.control.kafa1500_v6.settings import (
@@ -25,17 +17,34 @@ from lsy_drone_racing.control.kafa1500_v6.settings import (
     PlannerSettings,
 )
 from lsy_drone_racing.control.kafa1500_v6.state import parse_observation
+from lsy_drone_racing.control.kafa1500_v6.takeoff import TakeoffPhase
 from lsy_drone_racing.control.kafa1500_v6.trajectory import ReferenceManager
+from lsy_drone_racing.control.KaFa_1500_cockpit import (
+    FEEDFORWARD_SCALE,
+    LATERAL_ACCEL_LIMIT,
+    T_MIN_SEG,
+    V6_TAKEOFF_ALT,
+    V6_TAKEOFF_CLIMB_SPEED,
+    V6_TAKEOFF_TIME_MARGIN,
+    V6_TAKEOFF_Z_TOL,
+    V_CRUISE,
+    V_CRUISE_INTER,
+    VMAX,
+)
 
 if TYPE_CHECKING:
     from crazyflow import Sim
     from numpy.typing import NDArray
 
+    from lsy_drone_racing.control.kafa1500_v6.state import DroneObservation
     from lsy_drone_racing.control.kafa1500_v6.trajectory import ReferencePlan
 
 
 class KaFa1500V6(Controller):
     """Flies any observed gate layout with a global-replan cubic-spline reference."""
+
+    _MODE_TAKEOFF = "TAKEOFF"
+    _MODE_TRACKING = "TRACKING"
 
     def __init__(self, obs: dict[str, NDArray[np.floating]], info: dict, config: dict):
         """Initialize timing, drone parameters, feedback, and the reference manager."""
@@ -66,10 +75,19 @@ class KaFa1500V6(Controller):
             self._settings.runtime.replan_gate_delta_m,
             self._settings.runtime.replan_obstacle_delta_m,
         )
+        # Dedicated vertical lift-off; decouples takeoff aggressiveness from cruise speed.
+        self._takeoff = TakeoffPhase(
+            self._settings,
+            V6_TAKEOFF_ALT,
+            V6_TAKEOFF_CLIMB_SPEED,
+            V6_TAKEOFF_Z_TOL,
+            V6_TAKEOFF_TIME_MARGIN,
+        )
         self._tick = 0
         self._plan_start_tick = 0
         self._progress_t = 0.0
         self._finished = False
+        self._mode = self._MODE_TAKEOFF
         self._last_time = 0.0
         self._last_target = -1
         self._last_action = self._hover_action()
@@ -93,6 +111,32 @@ class KaFa1500V6(Controller):
             self._finished = True
             return self._last_action.copy()
 
+        # ── TAKEOFF: clean vertical climb, then hand off to gate tracking ─────
+        if self._mode == self._MODE_TAKEOFF:
+            if not self._takeoff.is_complete(frame, self._tick, self._dt):
+                action = self._takeoff.action(
+                    frame, self._feedback, self._tick, self._dt,
+                    self._mass, self._settings.runtime.gravity,
+                )
+                self._last_action = action
+                self._capture_debug(obs, frame, plan=None)
+                return action.copy()
+            # Reached altitude: switch to tracking and build the gate plan from the hover.
+            self._mode = self._MODE_TRACKING
+            self._references.reset()
+            self._plan_start_tick = self._tick
+            self._progress_t = 0.0
+
+        # ── TRACKING: global gate-spline reference ───────────────────────────
+        action, plan = self._track_action(frame)
+        self._last_action = action
+        self._capture_debug(obs, frame, plan=plan)
+        return action.copy()
+
+    def _track_action(
+        self, frame: DroneObservation
+    ) -> tuple[NDArray[np.floating], ReferencePlan]:
+        """Track the global gate spline; (re)plan on target/pose change and return the plan."""
         plan, rebuilt = self._references.ensure_plan(frame)
         if rebuilt:
             self._plan_start_tick = self._tick
@@ -118,10 +162,12 @@ class KaFa1500V6(Controller):
             self._settings.runtime.gravity,
             self._settings.command,
         )
-        self._last_action = action
+        return action, plan
 
-        # ── DEBUG VISUALISATION ──────────────────────────────────────────────
-        # Capture marker state here; render_callback draws it using draw_line.
+    def _capture_debug(
+        self, obs: dict, frame: DroneObservation, plan: ReferencePlan | None
+    ) -> None:
+        """Capture marker state for render_callback (gates, obstacles, planned waypoints)."""
         self._dbg_gate_pos = np.asarray(frame.gate_pos, dtype=np.float64)
         gates_visited = np.asarray(obs.get("gates_visited", []), dtype=bool).reshape(-1)
         known_mask = np.zeros(len(frame.gate_pos), dtype=bool)
@@ -135,13 +181,14 @@ class KaFa1500V6(Controller):
             )
         else:
             self._dbg_obs_pos = np.empty((0, 3), dtype=np.float64)
-        # Planned waypoints: points sampled along the active reference spline
-        n_samples = min(10, plan.t_total * 5)
-        t_pts = np.linspace(0.0, plan.t_total, max(2, int(n_samples)))
-        self._dbg_wp_pos = np.asarray(plan.curve(t_pts), dtype=np.float64)
-        # ── END DEBUG VISUALISATION ──────────────────────────────────────────
-
-        return action.copy()
+        # Planned waypoints: points sampled along the active reference spline (none yet
+        # during the vertical takeoff climb).
+        if plan is not None:
+            n_samples = min(10, plan.t_total * 5)
+            t_pts = np.linspace(0.0, plan.t_total, max(2, int(n_samples)))
+            self._dbg_wp_pos = np.asarray(plan.curve(t_pts), dtype=np.float64)
+        else:
+            self._dbg_wp_pos = np.empty((0, 3), dtype=np.float64)
 
     def _project(self, plan: ReferencePlan, pos: NDArray[np.floating]) -> float:
         """Find the spline time of the closest point ahead of the current progress."""
@@ -169,10 +216,12 @@ class KaFa1500V6(Controller):
         self._tick = 0
         self._progress_t = 0.0
         self._finished = False
+        self._mode = self._MODE_TAKEOFF
         self._last_time = 0.0
         self._last_target = -1
         self._feedback.reset()
         self._references.reset()
+        self._takeoff.reset()
         self._last_action = self._hover_action()
 
     def episode_callback(self) -> None:
@@ -226,7 +275,7 @@ class KaFa1500V6(Controller):
         """Return a short status summary for debugging and logging."""
         plan = self._references.plan
         return {
-            "controller_phase": "FINISHED" if self._finished else "TRACKING",
+            "controller_phase": "FINISHED" if self._finished else self._mode,
             "active_target_gate": self._last_target,
             "controller_time": self._last_time,
             "reference_end_time": None if plan is None else plan.t_total,
