@@ -26,6 +26,12 @@ SEARCH  : Archimedean spiral at _SEARCH_ALT (above the obstacle poles), swept ou
 NAVIGATE: plan through all contiguously discovered real gates, avoiding only detected
           obstacles, crossing each gate along its canonical +x axis.
 HOME    : after all gates are passed, descend to arena centre (0, 0) and land.
+
+Set the module-level ``_ALLOW_SEARCH = False`` to skip SEARCH entirely: TAKEOFF then hands
+directly to NAVIGATE and the drone never reverts to SEARCH. This is intended for the
+deployment / Level-2 case where gate positions are known from t=0 (the nominal positions fed
+to the planner are the real measured track), so the arena sweep is unnecessary. Leave it True
+for genuine Level-3 tracks, where gates are at the origin placeholder until sensed.
 """
 
 from __future__ import annotations
@@ -38,6 +44,33 @@ from scipy.spatial.transform import Rotation
 from drone_models.core import load_params
 
 from lsy_drone_racing.control import Controller
+from lsy_drone_racing.control.KaFa_1500_cockpit import (
+    ALLOW_SEARCH as _ALLOW_SEARCH,
+    ARENA_X_LIM as _ARENA_X_LIM,
+    ARENA_Y_LIM as _ARENA_Y_LIM,
+    DISCOVER_ALL_FIRST as _DISCOVER_ALL_FIRST,
+    GATE_POST_OFFSET as _GATE_POST_OFFSET,
+    NAV_D_POST as _NAV_D_POST,
+    NAV_D_PRE as _NAV_D_PRE,
+    NAV_LOOKAHEAD as _NAV_LOOKAHEAD,
+    NAV_R_OBS as _NAV_R_OBS,
+    NAV_START_VEL_SCALE as _NAV_START_VEL_SCALE,
+    SEARCH_ALT as _SEARCH_ALT,
+    SEARCH_RADIUS as _SEARCH_RADIUS,
+    SPIRAL_ADVANCE_RADIUS as _SPIRAL_ADVANCE_RADIUS,
+    SPIRAL_ANGLE_STEP as _SPIRAL_ANGLE_STEP,
+    SPIRAL_HORIZON as _SPIRAL_HORIZON,
+    SPIRAL_OUTWARD as _SPIRAL_OUTWARD,
+    SPIRAL_RADIAL_STEP as _SPIRAL_RADIAL_STEP,
+    TAKEOFF_ALT as _TAKEOFF_ALT,
+    TAKEOFF_TIME_MARGIN as _TAKEOFF_TIME_MARGIN,
+    TAKEOFF_Z_TOL as _TAKEOFF_Z_TOL,
+    V_CRUISE as _V_CRUISE,
+    V_CRUISE_INTER as _V_CRUISE_INTER,
+    V_CRUISE_SEARCH as _V_CRUISE_SEARCH,
+    VMAX as _VMAX,
+    VMAX_SEARCH as _VMAX_SEARCH,
+)
 from lsy_drone_racing.control.kafa1500_v6.attitude import attitude_action
 from lsy_drone_racing.control.kafa1500_v6.feedback import CascadedPid
 from lsy_drone_racing.control.kafa1500_v6.settings import (
@@ -52,69 +85,6 @@ from lsy_drone_racing.control.kafa1500_v6.trajectory import ReferencePlan, Refer
 if TYPE_CHECKING:
     from crazyflow import Sim
     from numpy.typing import NDArray
-
-# ── Spiral / search constants ─────────────────────────────────────────────────
-# Arena safety limits from level3.toml: x ∈ [-2.5, 2.5], y ∈ [-1.5, 1.5].
-# We keep 0.3 m inside the hard limits on each axis.
-_SEARCH_ALT = 1.8           # m — between gate heights 0.7 m and 1.2 m
-_SPIRAL_RADIAL_STEP = 0.6   # m radial gap per revolution; < 2 × 0.7 m sensor range
-_SPIRAL_ANGLE_STEP = np.pi / 6   # 30° step = 12 waypoints per revolution
-_SPIRAL_ADVANCE_RADIUS = 0.6     # m (2-D) — advance to next spiral point when this close
-_SPIRAL_HORIZON = 3              # waypoints ahead to include in each SEARCH plan
-# False (legacy, much better): outermost-first — fly out to _SEARCH_RADIUS then spiral inward,
-# ending the sweep near the arena centre, a good hub from which any gate-0 location is
-# reachable. True (spiral outward from centre) ends the sweep at the edge and tested far worse
-# (7.5% vs 40% on 40 seeds), so it is disabled.
-_SPIRAL_OUTWARD = False
-# Gates are only ever placed within border_margin (0.5 m) of the hard limits, i.e. inside
-# ±2.0 m (x) × ±1.0 m (y) (see envs/randomize.py:build_random_track_fn). The search box is
-# pulled in to those bounds: full coverage is still guaranteed (sensor range is 0.7 m) while
-# keeping the fast spiral well clear of the ±2.5/±1.5 m hard boundary, where the uncapped
-# outbound dash used to overshoot and disable the drone.
-_SEARCH_RADIUS = 2.2             # m — outer radius the search starts from, spiralling inward
-_ARENA_X_LIM = 1.9          # m from centre — search boundary (gates are within ±2.0 m)
-_ARENA_Y_LIM = 1.0          # m from centre — search boundary (gates are within ±1.0 m)
-_GATE_SKIP_RADIUS = 1.85    # m — skip spiral waypoints within this XY distance of a detected gate
-# Virtual columns are placed ±_GATE_POST_OFFSET along the gate lateral axis to funnel the
-# spline through the opening (the gate frame outer half-width is 0.36 m).
-_GATE_POST_OFFSET = 0.30    # m — lateral offset from gate centre to each virtual column.
-# Tighter than the 0.36 m outer frame edge: the virtual columns squeeze the approach/exit
-# waypoints closer to the opening centre (a straighter, better-centred run-in => fewer frame
-# clips), while staying clear of the gate-centre waypoint's obstacle-repair trigger (~0.24 m
-# at r_obs=0.12). This was the change that pushed the Level-3 finish rate to 50%.
-# ── Takeoff constants ─────────────────────────────────────────────────────────
-_TAKEOFF_ALT = 1.8          # m — straight-up climb target before SEARCH begins (tunable)
-_TAKEOFF_Z_TOL = 0.05       # m — switch to SEARCH when within this of _TAKEOFF_ALT
-_TAKEOFF_TIME_MARGIN = 1.0  # s — fallback handoff after the takeoff spline overruns by this
-# ── Speed constants (m/s) ─────────────────────────────────────────────────────
-_V_CRUISE_SEARCH = 2.5   # SEARCH cruise speed near (spiral) waypoints
-_VMAX_SEARCH = 3.0       # SEARCH peak-velocity cap
-_V_CRUISE = 1.0          # NAVIGATE cruise speed near gates (peri-gate; keep low for precision)
-_V_CRUISE_INTER = 1.0    # NAVIGATE cruise speed BETWEEN gates (raise for faster traversal)
-_VMAX = 1.4              # NAVIGATE peak-velocity cap
-# ── NAVIGATE gate-approach geometry ───────────────────────────────────────────
-# d_pre/d_post set the length of the straight run-in / run-out aligned with the gate
-# normal; a longer run-in reduces corner-cutting at the gate plane.  r_obs is the
-# obstacle keep-out radius: Level-3 obstacles are thin poles (0.015 m) placed in the
-# approach corridor *close to* the gate, so a large keep-out shoves the path toward the
-# far frame bar.  A tighter keep-out keeps the crossing near the opening centre while
-# still clearing the (thin) pole + drone radius (~0.07 m needed).
-_NAV_D_PRE = 0.60
-_NAV_D_POST = 0.40
-_NAV_R_OBS = 0.12
-# Scale applied to the drone's velocity when building the FIRST navigate plan after a
-# search handoff. The drone carries cross-arena spiral momentum that, used as the spline
-# start boundary condition, forces a wrong-way U-turn loop toward the first gate. Damping
-# it (0.0 = plan from rest) makes the spline head straight at the gate; the real velocity
-# is still used for tracking, so the drone simply decelerates onto the new plan. 0.5 gave
-# the best average gates passed (it heads more directly at gate 0 without a hard transient).
-_NAV_START_VEL_SCALE = 0.5
-# Reference look-ahead time (s). Smaller => the drone tracks the spline point closer to its
-# current progress instead of aiming ahead, which reduces corner-cutting (and the body tilt
-# that makes a rotor clip the gate frame) on the curved gate approach. Default v6 value 0.20.
-_NAV_LOOKAHEAD = 0.20
-# Search strategy: True = discover ALL gates before navigating; False = navigate each gate as found
-_DISCOVER_ALL_FIRST = True
 
 
 class KaFa1500V7(Controller):
@@ -234,8 +204,10 @@ class KaFa1500V7(Controller):
             self._plan_start_tick = self._tick
             self._last_last_known = -1
 
-        elif self._mode == self._MODE_NAVIGATE and target not in self._known_gates:
+        elif _ALLOW_SEARCH and self._mode == self._MODE_NAVIGATE and target not in self._known_gates:
             # Just passed all currently known gates; need to search for the next
+            # (skipped entirely when _ALLOW_SEARCH is False — NAVIGATE keeps planning to the
+            # target gate using its known/nominal position instead of reverting to SEARCH).
             self._mode = self._MODE_SEARCH
             self._virtual_target = self._find_nearest_spiral(frame.pos)
             self._search_references.reset()
@@ -301,6 +273,15 @@ class KaFa1500V7(Controller):
         reached = float(frame.pos[2]) >= _TAKEOFF_ALT - _TAKEOFF_Z_TOL
         overran = self._takeoff_plan is not None and clock_t >= t_total + _TAKEOFF_TIME_MARGIN
         if reached or overran:
+            if not _ALLOW_SEARCH:
+                # Search disabled (known-track / deployment case): hand off straight to
+                # NAVIGATE. Gate positions are trusted from t=0, so no sweep is needed.
+                self._mode = self._MODE_NAVIGATE
+                self._references.reset()
+                self._progress_t = 0.0
+                self._plan_start_tick = self._tick
+                self._last_last_known = -1
+                return self._navigate_action(frame, obs_visited)
             self._mode = self._MODE_SEARCH
             # Start at the outermost spiral waypoint (index 0) so the drone first flies
             # out to _SEARCH_RADIUS, then spirals back inward to the centre.

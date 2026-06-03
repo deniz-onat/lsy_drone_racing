@@ -9,9 +9,10 @@ from crazyflow.sim.visualize import draw_line
 from drone_models.core import load_params
 
 from lsy_drone_racing.control import Controller
+from lsy_drone_racing.control.KaFa_1500_cockpit import V_CRUISE, V_CRUISE_INTER, VMAX
 from lsy_drone_racing.control.kafa1500_v6.attitude import attitude_action
 from lsy_drone_racing.control.kafa1500_v6.feedback import CascadedPid
-from lsy_drone_racing.control.kafa1500_v6.settings import ControllerSettings
+from lsy_drone_racing.control.kafa1500_v6.settings import ControllerSettings, PlannerSettings
 from lsy_drone_racing.control.kafa1500_v6.state import parse_observation
 from lsy_drone_racing.control.kafa1500_v6.trajectory import ReferenceManager
 
@@ -30,7 +31,13 @@ class KaFa1500V6(Controller):
         super().__init__(obs, info, config)
         if config.env.control_mode != "attitude":
             raise ValueError("KaFa_1500_v6 requires env.control_mode = 'attitude'.")
-        self._settings = ControllerSettings()
+        # Velocities come from the shared cockpit; all other planner values keep their
+        # kafa1500_v6/settings.py defaults (only the speeds are centrally tunable).
+        self._settings = ControllerSettings(
+            planner=PlannerSettings(
+                v_cruise=V_CRUISE, v_cruise_inter=V_CRUISE_INTER, max_speed=VMAX
+            )
+        )
         self._freq = float(config.env.freq)
         self._dt = 1.0 / self._freq
         params = load_params(config.sim.physics, config.sim.drone_model)
