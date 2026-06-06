@@ -19,8 +19,8 @@ import numpy as np
 # ── Shared NAVIGATE velocity constants (used by BOTH v6 and v7) ─────────────────
 # These are v6's tuned values. v7 NAVIGATE shares them (its previous 1.0/1.0/1.4
 # is superseded). v7's SEARCH speeds remain separate (see below).
-V_CRUISE = 1.2              # m/s — cruise speed near gates (peri-gate; keep low for precision)
-V_CRUISE_INTER = 1.8        # m/s — cruise speed BETWEEN gates (raise for faster traversal)
+V_CRUISE = 1.3              # m/s — cruise speed near gates (peri-gate; keep low for precision)
+V_CRUISE_INTER = 1.95        # m/s — cruise speed BETWEEN gates (raise for faster traversal)
 VMAX = 2.3                  # m/s — peak-velocity cap
 
 # ── Shared spline-timing & stability tuning (used by BOTH v6 and v7 NAVIGATE) ───
@@ -32,15 +32,15 @@ VMAX = 2.3                  # m/s — peak-velocity cap
 # time-floored — i.e. flown SLOWER than cruise regardless of the speeds above.
 # Lower => short straights (and the gate run-in/run-out) may go faster; too low
 # risks jerk at the gate plane. Move this in isolation when sweeping speeds.
-T_MIN_SEG = 0.35
+T_MIN_SEG = 0.4
 # turn_slowdown: corners sharper than TURN_MIN_SHARPNESS (0 straight … 1 reversal)
 # get their duration stretched by (1 + TURN_SLOW_GAIN × sharpness). This is the
 # auto-protection that lets VMAX rise without clipping frames on bends — raise the
 # gain (or lower the threshold) as speeds go up; lower it to carry more speed
 # through corners. Per the v6 tuning history, turn_slowdown is load-bearing for
 # the Level-2 finish rate, so change it carefully.
-TURN_MIN_SHARPNESS = 0.4
-TURN_SLOW_GAIN = 0.6
+TURN_MIN_SHARPNESS = 0.25
+TURN_SLOW_GAIN = 0.8
 # Tracker authority — how hard the feedforward may push to follow a fast, curved
 # reference. If raising the speeds produces corner-cutting / frame clips (the
 # reference outrunning the tracker), raise LATERAL_ACCEL_LIMIT; too high amplifies
