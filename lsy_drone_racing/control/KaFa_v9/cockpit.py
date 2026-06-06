@@ -20,8 +20,19 @@ STEP_DT = 0.05      # s, prediction step (HORIZON * STEP_DT = look-ahead, ~0.7 s
 # by the actuator limits below, so it flies as fast as is dynamically feasible. At 1.8 the
 # MPCC already laps both tracks ~40% faster than v8's tuned PID; pushing it higher trades
 # finish rate for time, since the point-mass model gets less forgiving.
-V_REF = 1.8         # m/s, reference recede speed (set above what the drone can sustain)
-V_MAX = 2.4         # m/s, hard velocity cap for safety
+# V_REF = 1.8         # m/s, reference recede speed (set above what the drone can sustain)
+# V_MAX = 2.4         # m/s, hard velocity cap for safety
+
+# -----results -----
+# INFO:__main__:Average Time: successful_times_avg (s): 9.547912087912088
+# INFO:__main__:Success Rate: 91.0%
+
+V_REF = 2
+V_MAX = 3
+
+# -----results -----
+# INFO:__main__:Average Time: successful_times_avg (s): 8.661587301587302
+# INFO:__main__:Success Rate: 63.0%
 
 # --- Actuator limits (these, not tuning, set the achievable speed) ---
 # TILT_RATIO caps |horizontal thrust| / |vertical thrust| = tan(max tilt). 0.55 is about
