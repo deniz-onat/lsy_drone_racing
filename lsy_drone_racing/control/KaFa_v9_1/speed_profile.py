@@ -1,10 +1,10 @@
-"""Curvature-aware speed profile for the KaFa_1500_v9.1 reference.
+"""Curvature-aware speed profile for the KaFa v9-family reference (wired into v9.2).
 
 v9/v9.1 recede the MPCC reference at a CONSTANT rate (V_REF), which is why the cockpit caps
 V_REF low: a constant rate that is safe through the tight gate turns is slow on the straights.
 This module shapes the recede rate to the path instead -- slow into corners, fast on
 straights -- so the straights can run near V_MAX while the turns self-brake, without changing
-the MPCC itself (which stays the safety net).
+the MPCC itself (which stays the safety net). It lives here but is consumed by KaFa_1500_v9.2.
 
 It is a textbook time-optimal path parameterisation under a friction-circle limit: a lateral
 cap from the path curvature, v_curv = sqrt(a_lat_max / kappa), then a forward+backward pass
