@@ -56,9 +56,18 @@ class SpeedProfile:
         """Arc length at spline time t (maps the controller's progress onto the profile)."""
         return float(np.interp(t, self._taus, self._s))
 
+    def at_arc(self, s: NDArray[np.float64]) -> NDArray[np.float64]:
+        """Curvature-limited speed at the given arc lengths (clamped past the path end).
+
+        Used by v10 to cap its progress rate by curvature; np.interp flat-extends, so arc
+        values past the path end take the final speed.
+        """
+        return np.interp(np.asarray(s, dtype=np.float64), self._s, self._v)
+
     def arc_offsets(self, s0: float, n: int, dt: float) -> NDArray[np.float64]:
         """Cumulative arc distances ahead of s0 after n steps of dt at the profiled speed."""
         offsets = np.zeros(n + 1, dtype=np.float64)
+        
         arc = float(s0)
         for k in range(1, n + 1):
             arc += float(np.interp(arc, self._s, self._v)) * dt
