@@ -39,10 +39,11 @@ class KaFa1500V10(KaFa1500V9):
         self._settings = ControllerSettings()
         mpcc = self._settings.mpcc
         a_max = self._command.thrust_max / self._mass
-        s_grid = np.linspace(0.0, mpcc.s_max, mpcc.n_nodes)
-        self._mpcc = MPCC(mpcc, a_max, s_grid)
+        self._mpcc = MPCC(mpcc, a_max)
         self._v_theta_max = mpcc.v_theta_max
         self._ramp_s, self._ramp_start = mpcc.ramp_s, mpcc.ramp_start
+        # Friction-circle params for the curvature speed cap (v_cap = top straight speed).
+        self._a_lat_max, self._v_min = mpcc.a_lat_max, mpcc.v_min
         self._path: ArcPath | None = None
         self._s = 0.0
 
@@ -56,8 +57,9 @@ class KaFa1500V10(KaFa1500V9):
         """Fly the plan with the time-optimal MPCC; progress is anchored to the drone."""
         plan, rebuilt = self._references.ensure_plan(frame)
         if rebuilt or self._path is None:  # new plan -> rebuild the arc-length view and reload
-            self._path = ArcPath(plan.curve, plan.t_total, self._mpcc.s_grid)
-            self._mpcc.set_path(self._path.nodes)
+            self._path = ArcPath(plan.curve, plan.t_total, self._v_theta_max, self._a_lat_max,
+                                 self._v_min)
+            self._mpcc.set_path(self._path)
             self._s = self._path.project(frame.pos, 0.0)
         self._s = self._path.project(frame.pos, self._s)  # advance the foot-point anchor
         elapsed = (self._tick - self._nav_start_tick) * self._dt

@@ -15,7 +15,7 @@ from lsy_drone_racing.control.KaFa_v10 import cockpit as cp
 
 @dataclass(frozen=True)
 class MPCCSettings:
-    """Time-optimal MPCC: horizon, limits, progress reward, weights, and the path grid."""
+    """Time-optimal MPCC: horizon, limits, progress reward, weights, and the QP iteration cap."""
 
     horizon: int = cp.HORIZON
     step_dt: float = cp.STEP_DT
@@ -26,13 +26,13 @@ class MPCCSettings:
     v_theta_max: float = cp.V_THETA_MAX
     a_theta_max: float = cp.A_THETA_MAX
     r_dv: float = cp.R_DV
+    a_lat_max: float = cp.A_LAT_MAX
+    v_min: float = cp.V_MIN
     w_contour: float = cp.W_CONTOUR
     w_lag: float = cp.W_LAG
     w_accel: float = cp.W_ACCEL
     ramp_s: float = cp.RAMP_S
     ramp_start: float = cp.RAMP_START
-    s_max: float = cp.S_MAX
-    n_nodes: int = cp.N_NODES
     max_iter: int = cp.MAX_ITER
     gravity: float = cp.GRAVITY
 
