@@ -4,7 +4,7 @@
 # | :-----------------: | :----------------------------: | :-------------------------: | :---------------: | :-------------: |
 # | `level3.toml`       | *Yes*                          | *Yes*                       | *Yes*             | Online planning |
 [controller]
-file = "KaFa_1500_v7.py" # Put your controller file name here. Specifying a controller as argument to scripts will override this setting. Controllers are located in `lsy_drone_racing/control/`
+file = "KaFa_1500_v10_l3.py" # level-3 search-then-navigate controller (v10 MPCC + arena sweep)
 
 [deploy]
 ### Settings only relevant for deployment
