@@ -41,6 +41,7 @@ from lsy_drone_racing.control.kafa1500_v6.state import parse_observation
 from lsy_drone_racing.control.KaFa_1500_v10 import KaFa1500V10
 from lsy_drone_racing.control.KaFa_v10.arc_path import ArcPath
 from lsy_drone_racing.control.KaFa_v10.mpcc import MPCC
+from lsy_drone_racing.control.KaFa_v10_l3.approach import build_approach_curve
 from lsy_drone_racing.control.KaFa_v10_l3.cockpit import (
     NAV_A_LAT_MAX,
     NAV_A_Z_MIN,
@@ -63,6 +64,7 @@ class KaFa1500V10L3(KaFa1500V10):
 
     _MODE_SEARCH = "SEARCH"
     _MODE_BRAKE = "BRAKE"
+    _MODE_STAGE = "STAGE"
     _BRAKE_V = 0.5      # m/s, race starts once the drone has slowed below this
     _BRAKE_T_MAX = 1.2  # s, brake at most this long, then race regardless
 
@@ -84,6 +86,12 @@ class KaFa1500V10L3(KaFa1500V10):
         self._search_t_total = 0.0
         self._search_start_tick = 0
         self._brake_start_tick = 0
+        # STAGE (search -> navigate hand-off) state.
+        self._stage_path: ArcPath | None = None
+        self._stage_curve = None
+        self._stage_t_total = 0.0
+        self._stage_entry_xy = np.zeros(2, dtype=np.float64)
+        self._stage_start_tick = 0
         # Discovery + render state (written by compute_control, read by render_callback).
         self._obs_visited = np.asarray(obs["obstacles_visited"], dtype=bool)
         self._dbg_gate_pos = np.asarray(obs["gates_pos"], dtype=np.float64)
@@ -97,6 +105,9 @@ class KaFa1500V10L3(KaFa1500V10):
         self._search_path = None
         self._search_curve = None
         self._search_t_total = 0.0
+        self._stage_path = None
+        self._stage_curve = None
+        self._stage_t_total = 0.0
 
     # ── Main loop ─────────────────────────────────────────────────────────────
     def compute_control(
@@ -144,12 +155,31 @@ class KaFa1500V10L3(KaFa1500V10):
         if self._mode == self._MODE_BRAKE:
             elapsed = (self._tick - self._brake_start_tick) * self._dt
             if float(np.linalg.norm(frame.vel)) < self._BRAKE_V or elapsed > self._BRAKE_T_MAX:
-                self._begin_navigate()
+                self._begin_stage(frame)  # -> STAGE if on the wrong side of gate 0, else NAVIGATE
             else:
                 self._s = self._search_path.project(frame.pos, self._s)
                 accel = self._mpcc.solve(frame.pos, frame.vel, self._s, 0.0)
                 thrust_vector = self._mass * (accel + np.array([0.0, 0.0, self._gravity]))
                 action = _vector_to_attitude(thrust_vector, frame.quat, self._command)
+                self._last_action = action
+                return action.copy()
+
+        # ── STAGE: loop around to behind gate 0's entry before racing ──────────
+        # If the sweep ended on the exit (+x) side of gate 0, racing straight from there forces the
+        # planner into a cusp around the gate. STAGE flies a short arena-clear detour (at the sweep
+        # altitude, above the obstacles) to a clean entry-side hand-off pose first.
+        if self._mode == self._MODE_STAGE:
+            self._s = self._stage_path.project(frame.pos, self._s)
+            reached = float(np.linalg.norm(frame.pos[:2] - self._stage_entry_xy)) < (
+                self._search.stage_reach
+            )
+            elapsed = (self._tick - self._stage_start_tick) * self._dt
+            if reached or self._s >= self._stage_path.total - 0.05 or elapsed > (
+                self._search.stage_t_max
+            ):
+                self._begin_navigate()
+            else:
+                action = self._stage_action(frame)
                 self._last_action = action
                 return action.copy()
 
@@ -180,6 +210,26 @@ class KaFa1500V10L3(KaFa1500V10):
         self._nav_start_tick = self._tick
         self._mode = self._MODE_NAVIGATE
 
+    def _begin_stage(self, frame: DroneObservation) -> None:
+        """Build the gate-0 staging detour and enter STAGE; race directly if none is needed."""
+        target = max(int(frame.target_gate), 0)
+        result = build_approach_curve(
+            frame.pos, frame.gate_pos[target], frame.gate_quat[target], self._search
+        )
+        if result is None:  # already on the entry side -> clean hand-off, race directly
+            self._begin_navigate()
+            return
+        self._stage_curve, self._stage_t_total, self._stage_entry_xy = result
+        self._stage_path = ArcPath(
+            self._stage_curve, self._stage_t_total, self._search.stage_speed, self._search.a_lat,
+            self._search.v_min,
+        )
+        self._mpcc.reset()
+        self._mpcc.set_path(self._stage_path)
+        self._s = self._stage_path.project(frame.pos, 0.0)
+        self._stage_start_tick = self._tick
+        self._mode = self._MODE_STAGE
+
     # ── SEARCH action (same MPCC as NAVIGATE, fed the spiral path) ─────────────
     def _search_action(self, frame: DroneObservation) -> NDArray[np.floating]:
         """Fly the spiral with the v10 MPCC at the (ramped) search speed; loop if exhausted."""
@@ -191,6 +241,14 @@ class KaFa1500V10L3(KaFa1500V10):
         ramp = min(1.0, self._search.ramp_start + (1.0 - self._search.ramp_start) * elapsed
                    / self._search.ramp_s)
         accel = self._mpcc.solve(frame.pos, frame.vel, self._s, self._search.speed * ramp)
+        thrust_vector = self._mass * (accel + np.array([0.0, 0.0, self._gravity]))
+        return _vector_to_attitude(thrust_vector, frame.quat, self._command)
+
+    # ── STAGE action (same MPCC, fed the gate-0 approach detour) ───────────────
+    def _stage_action(self, frame: DroneObservation) -> NDArray[np.floating]:
+        """Fly the staging detour to behind gate 0's entry with the v10 MPCC."""
+        self._s = self._stage_path.project(frame.pos, self._s)
+        accel = self._mpcc.solve(frame.pos, frame.vel, self._s, self._search.stage_speed)
         thrust_vector = self._mass * (accel + np.array([0.0, 0.0, self._gravity]))
         return _vector_to_attitude(thrust_vector, frame.quat, self._command)
 
@@ -224,10 +282,13 @@ class KaFa1500V10L3(KaFa1500V10):
 
     def render_callback(self, sim: Sim) -> None:
         """Draw the active path (green) plus crosses at detected gates and obstacles."""
-        # Active path: the spiral during SEARCH, the race spline during NAVIGATE.
+        # Active path: the spiral during SEARCH/BRAKE, the detour during STAGE, race spline in NAV.
         if self._mode in (self._MODE_SEARCH, self._MODE_BRAKE) and self._search_curve is not None:
             samples = self._search_curve(np.linspace(0.0, self._search_t_total, 120))
             draw_line(sim, np.asarray(samples, dtype=np.float32), rgba=(0.1, 0.6, 1.0, 1.0))
+        elif self._mode == self._MODE_STAGE and self._stage_curve is not None:
+            samples = self._stage_curve(np.linspace(0.0, self._stage_t_total, 60))
+            draw_line(sim, np.asarray(samples, dtype=np.float32), rgba=(1.0, 0.6, 0.1, 1.0))
         else:
             plan = self._references.plan
             if plan is not None:

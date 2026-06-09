@@ -42,6 +42,24 @@ SEARCH_V_MIN = 0.8      # m/s, floor so the tight inner loops don't crawl to a s
 RAMP_START = 0.1        # fraction of SEARCH_SPEED right after the takeoff hand-off
 RAMP_S = 1.2            # s, time to ramp the sweep speed up to full
 
+# --- STAGE: reposition behind gate 0 before racing (search -> navigate hand-off) ---
+# The sweep ends at an arbitrary pose; gate yaw is randomised and the env counts gate 0 only when
+# crossed in its canonical +x direction. When the sweep ends on the EXIT (+x) side of gate 0 the
+# race planner must reverse around the gate -> a cusp the MPCC crashes on (the dominant transition
+# failure). STAGE detects that and loops the drone (at the sweep altitude, above the obstacles) to
+# behind gate 0's entry first. STAGE_MIN_ALONG is how far onto the exit side (m, measured along the
+# gate's +x axis) the drone must be before staging triggers; entry-side hand-offs (along<=0) skip it.
+# along = (drone - gate0)·(gate +x). A drone only slightly past the gate plane (along < ~0.7 m)
+# the planner still threads with its own run-in/nudge and finishes; staging it there only perturbs
+# a working approach. The cusp turns fatal once the drone is well onto the exit side, so trigger
+# staging only beyond that band.
+STAGE_MIN_ALONG = 0.9   # m, trigger staging only when clearly on the wrong (exit) side of gate 0
+STAGE_D_ENTRY = 0.6     # m, hand-off point behind gate 0 (just behind the planner's run-in)
+STAGE_SIDE_W = 0.85     # m, lateral swing clearing the 0.72 m gate frame as the drone loops around
+STAGE_SPEED = 1.8       # m/s, top staging speed (MPCC progress-rate cap during STAGE)
+STAGE_REACH = 0.30      # m, XY distance to the entry point at which STAGE hands off to NAVIGATE
+STAGE_T_MAX = 4.0       # s, stage at most this long, then race regardless (safety)
+
 # --- NAVIGATE budget for level3 (gentler than v10's level2 race) ---
 # Level3 is online planning, not a speed run: the drone enters NAVIGATE high (~1.8 m) and moving
 # (~1.7 m/s) from the sweep, then must dive and thread gates scattered across the arena. v10's
@@ -75,3 +93,9 @@ class SearchSettings:
     v_min: float = SEARCH_V_MIN
     ramp_start: float = RAMP_START
     ramp_s: float = RAMP_S
+    stage_min_along: float = STAGE_MIN_ALONG
+    stage_d_entry: float = STAGE_D_ENTRY
+    stage_side_w: float = STAGE_SIDE_W
+    stage_speed: float = STAGE_SPEED
+    stage_reach: float = STAGE_REACH
+    stage_t_max: float = STAGE_T_MAX
