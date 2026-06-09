@@ -1,13 +1,20 @@
 # Sharp slalom (~115 deg S-swings)
 #
-# Sharp-turn stress test for v10.1 (KaFa_1500_v10_1). Same sim / randomization
+# Sharp-turn stress test for v10.2 (KaFa_1500_v10_2). Same sim / randomization
 # settings as level2; only the gate geometry differs.
+#
+# On this track v10.1 could SKIP a gate section: where the drone enters and leaves a
+# gate from the same side, the planned path folds into a tight cusp, and v10.1's global
+# nearest-point progress anchor snapped ~1-2 m across the fold (past the gate). v10.2
+# anchors progress to the solver's own (dynamics-feasible) predicted progress with only a
+# bounded geometric correction, so the anchor can no longer teleport across the fold and
+# the gate is threaded instead of skipped.
 #
 # A weaving slalom: gates at y=+-0.7 with crossing headings alternating down-right / up-right, so the drone swings ~115 deg at every gate. Obstacles sit just outside each turn apex to punish overshoot.
 [controller]
  # Put your controller file name here. Specifying a controller as argument to scripts will override this setting. Controllers are located in `lsy_drone_racing/control/`
  # Put your controller file name here. Specifying a controller as argument to scripts will override this setting. Controllers are located in `lsy_drone_racing/control/`
-file = "KaFa_1500_v10_1.py"
+file = "KaFa_1500_v10_2.py"
 
 [deploy]
 ### Settings only relevant for deployment
