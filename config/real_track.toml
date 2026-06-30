@@ -1,5 +1,5 @@
 [controller]
-file = "KaFa_1500_v3.py"
+file = "KaFa_1500_v12.py"
 
 [deploy]
 check_drone_start_pos = true
