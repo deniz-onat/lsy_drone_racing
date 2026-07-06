@@ -53,7 +53,7 @@ class KaFa1500V102(KaFa1500V101):
     """v10.1's gate-aware time-optimal MPCC with a dynamics-aware (predicted-progress) anchor."""
 
     def __init__(self, obs: dict[str, np.ndarray], info: dict, config: dict):
-        """Build v10.1, then swap in the v10.2 settings, MPCC (predicted-progress) and anchor band."""
+        """Build v10.1, then swap in the v10.2 settings, MPCC and anchor band."""
         super().__init__(obs, info, config)
         self._settings = ControllerSettings()
         mpcc = self._settings.mpcc

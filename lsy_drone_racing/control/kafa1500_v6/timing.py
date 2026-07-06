@@ -12,10 +12,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from scipy.interpolate import CubicSpline
 
-from lsy_drone_racing.control.KaFa_1500_cockpit import (
-    TURN_MIN_SHARPNESS,
-    TURN_SLOW_GAIN,
-)
+from lsy_drone_racing.control.KaFa_1500_cockpit import TURN_MIN_SHARPNESS, TURN_SLOW_GAIN
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray

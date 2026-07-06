@@ -47,8 +47,8 @@ RAMP_S = 1.2            # s, time to ramp the sweep speed up to full
 # crossed in its canonical +x direction. When the sweep ends on the EXIT (+x) side of gate 0 the
 # race planner must reverse around the gate -> a cusp the MPCC crashes on (the dominant transition
 # failure). STAGE detects that and loops the drone (at the sweep altitude, above the obstacles) to
-# behind gate 0's entry first. STAGE_MIN_ALONG is how far onto the exit side (m, measured along the
-# gate's +x axis) the drone must be before staging triggers; entry-side hand-offs (along<=0) skip it.
+# behind gate 0's entry first. STAGE_MIN_ALONG is how far onto the exit side (m, measured along
+# the gate's +x axis) the drone must be before staging triggers; entry-side hand-offs skip it.
 # along = (drone - gate0)·(gate +x). A drone only slightly past the gate plane (along < ~0.7 m)
 # the planner still threads with its own run-in/nudge and finishes; staging it there only perturbs
 # a working approach. The cusp turns fatal once the drone is well onto the exit side, so trigger

@@ -1,4 +1,4 @@
-"""Curvature-aware speed profile for the KaFa v9-family reference (wired into v9.2).
+"""Curvature-aware speed profile for the KaFa_1500_v12_s reference.
 
 v9/v9.1 recede the MPCC reference at a CONSTANT rate (V_REF), which is why the cockpit caps
 V_REF low: a constant rate that is safe through the tight gate turns is slow on the straights.

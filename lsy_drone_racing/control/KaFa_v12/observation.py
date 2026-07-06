@@ -1,4 +1,4 @@
-"""Observation parsing routines for the KaFa_1500_v6 controller."""
+"""Observation parsing routines for the KaFa_1500_v12 controller."""
 # ruff: noqa: TC002
 
 from __future__ import annotations

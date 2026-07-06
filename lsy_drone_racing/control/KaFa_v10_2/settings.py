@@ -11,7 +11,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from lsy_drone_racing.control.KaFa_v10_1.settings import ControllerSettings as _V101ControllerSettings
+from lsy_drone_racing.control.KaFa_v10_1.settings import (
+    ControllerSettings as _V101ControllerSettings,
+)
 from lsy_drone_racing.control.KaFa_v10_1.settings import MPCCSettings as _V101MPCCSettings
 from lsy_drone_racing.control.KaFa_v10_2 import cockpit as cp
 

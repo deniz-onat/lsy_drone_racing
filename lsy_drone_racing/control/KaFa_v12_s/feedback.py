@@ -1,4 +1,4 @@
-"""Cascaded position/velocity feedback for KaFa_1500_v6."""
+"""Cascaded position/velocity feedback for KaFa_1500_v12_s."""
 # ruff: noqa: TC001, TC002
 
 from __future__ import annotations

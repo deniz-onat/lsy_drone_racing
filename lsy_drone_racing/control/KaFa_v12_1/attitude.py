@@ -1,4 +1,4 @@
-"""Attitude action generation for KaFa_1500_v6."""
+"""Attitude action generation for KaFa_1500_v12_1."""
 # ruff: noqa: TC001, TC002
 
 from __future__ import annotations

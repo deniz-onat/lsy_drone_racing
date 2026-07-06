@@ -40,40 +40,10 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from crazyflow.sim.visualize import draw_line
-from scipy.spatial.transform import Rotation
 from drone_models.core import load_params
+from scipy.spatial.transform import Rotation
 
 from lsy_drone_racing.control import Controller
-from lsy_drone_racing.control.KaFa_1500_cockpit import (
-    ALLOW_SEARCH as _ALLOW_SEARCH,
-    ARENA_X_LIM as _ARENA_X_LIM,
-    ARENA_Y_LIM as _ARENA_Y_LIM,
-    DISCOVER_ALL_FIRST as _DISCOVER_ALL_FIRST,
-    FEEDFORWARD_SCALE as _FEEDFORWARD_SCALE,
-    GATE_POST_OFFSET as _GATE_POST_OFFSET,
-    LATERAL_ACCEL_LIMIT as _LATERAL_ACCEL_LIMIT,
-    NAV_D_POST as _NAV_D_POST,
-    NAV_D_PRE as _NAV_D_PRE,
-    NAV_LOOKAHEAD as _NAV_LOOKAHEAD,
-    NAV_R_OBS as _NAV_R_OBS,
-    NAV_START_VEL_SCALE as _NAV_START_VEL_SCALE,
-    SEARCH_ALT as _SEARCH_ALT,
-    SEARCH_RADIUS as _SEARCH_RADIUS,
-    SPIRAL_ADVANCE_RADIUS as _SPIRAL_ADVANCE_RADIUS,
-    SPIRAL_ANGLE_STEP as _SPIRAL_ANGLE_STEP,
-    SPIRAL_HORIZON as _SPIRAL_HORIZON,
-    SPIRAL_OUTWARD as _SPIRAL_OUTWARD,
-    SPIRAL_RADIAL_STEP as _SPIRAL_RADIAL_STEP,
-    T_MIN_SEG as _T_MIN_SEG,
-    TAKEOFF_ALT as _TAKEOFF_ALT,
-    TAKEOFF_TIME_MARGIN as _TAKEOFF_TIME_MARGIN,
-    TAKEOFF_Z_TOL as _TAKEOFF_Z_TOL,
-    V_CRUISE as _V_CRUISE,
-    V_CRUISE_INTER as _V_CRUISE_INTER,
-    V_CRUISE_SEARCH as _V_CRUISE_SEARCH,
-    VMAX as _VMAX,
-    VMAX_SEARCH as _VMAX_SEARCH,
-)
 from lsy_drone_racing.control.kafa1500_v6.attitude import attitude_action
 from lsy_drone_racing.control.kafa1500_v6.feedback import CascadedPid
 from lsy_drone_racing.control.kafa1500_v6.settings import (
@@ -84,7 +54,37 @@ from lsy_drone_racing.control.kafa1500_v6.settings import (
 )
 from lsy_drone_racing.control.kafa1500_v6.state import DroneObservation, parse_observation
 from lsy_drone_racing.control.kafa1500_v6.timing import build_spline
-from lsy_drone_racing.control.kafa1500_v6.trajectory import ReferencePlan, ReferenceManager
+from lsy_drone_racing.control.kafa1500_v6.trajectory import ReferenceManager, ReferencePlan
+from lsy_drone_racing.control.KaFa_1500_cockpit import ALLOW_SEARCH as _ALLOW_SEARCH
+from lsy_drone_racing.control.KaFa_1500_cockpit import ARENA_X_LIM as _ARENA_X_LIM
+from lsy_drone_racing.control.KaFa_1500_cockpit import ARENA_Y_LIM as _ARENA_Y_LIM
+from lsy_drone_racing.control.KaFa_1500_cockpit import DISCOVER_ALL_FIRST as _DISCOVER_ALL_FIRST
+from lsy_drone_racing.control.KaFa_1500_cockpit import FEEDFORWARD_SCALE as _FEEDFORWARD_SCALE
+from lsy_drone_racing.control.KaFa_1500_cockpit import GATE_POST_OFFSET as _GATE_POST_OFFSET
+from lsy_drone_racing.control.KaFa_1500_cockpit import LATERAL_ACCEL_LIMIT as _LATERAL_ACCEL_LIMIT
+from lsy_drone_racing.control.KaFa_1500_cockpit import NAV_D_POST as _NAV_D_POST
+from lsy_drone_racing.control.KaFa_1500_cockpit import NAV_D_PRE as _NAV_D_PRE
+from lsy_drone_racing.control.KaFa_1500_cockpit import NAV_LOOKAHEAD as _NAV_LOOKAHEAD
+from lsy_drone_racing.control.KaFa_1500_cockpit import NAV_R_OBS as _NAV_R_OBS
+from lsy_drone_racing.control.KaFa_1500_cockpit import NAV_START_VEL_SCALE as _NAV_START_VEL_SCALE
+from lsy_drone_racing.control.KaFa_1500_cockpit import SEARCH_ALT as _SEARCH_ALT
+from lsy_drone_racing.control.KaFa_1500_cockpit import SEARCH_RADIUS as _SEARCH_RADIUS
+from lsy_drone_racing.control.KaFa_1500_cockpit import (
+    SPIRAL_ADVANCE_RADIUS as _SPIRAL_ADVANCE_RADIUS,
+)
+from lsy_drone_racing.control.KaFa_1500_cockpit import SPIRAL_ANGLE_STEP as _SPIRAL_ANGLE_STEP
+from lsy_drone_racing.control.KaFa_1500_cockpit import SPIRAL_HORIZON as _SPIRAL_HORIZON
+from lsy_drone_racing.control.KaFa_1500_cockpit import SPIRAL_OUTWARD as _SPIRAL_OUTWARD
+from lsy_drone_racing.control.KaFa_1500_cockpit import SPIRAL_RADIAL_STEP as _SPIRAL_RADIAL_STEP
+from lsy_drone_racing.control.KaFa_1500_cockpit import T_MIN_SEG as _T_MIN_SEG
+from lsy_drone_racing.control.KaFa_1500_cockpit import TAKEOFF_ALT as _TAKEOFF_ALT
+from lsy_drone_racing.control.KaFa_1500_cockpit import TAKEOFF_TIME_MARGIN as _TAKEOFF_TIME_MARGIN
+from lsy_drone_racing.control.KaFa_1500_cockpit import TAKEOFF_Z_TOL as _TAKEOFF_Z_TOL
+from lsy_drone_racing.control.KaFa_1500_cockpit import V_CRUISE as _V_CRUISE
+from lsy_drone_racing.control.KaFa_1500_cockpit import V_CRUISE_INTER as _V_CRUISE_INTER
+from lsy_drone_racing.control.KaFa_1500_cockpit import V_CRUISE_SEARCH as _V_CRUISE_SEARCH
+from lsy_drone_racing.control.KaFa_1500_cockpit import VMAX as _VMAX
+from lsy_drone_racing.control.KaFa_1500_cockpit import VMAX_SEARCH as _VMAX_SEARCH
 
 if TYPE_CHECKING:
     from crazyflow import Sim
@@ -633,9 +633,11 @@ class KaFa1500V7(Controller):
         self._dbg_wp_pos = np.empty((0, 3), dtype=np.float64)
 
     def episode_callback(self) -> None:
+        """Reset state after an episode completes."""
         self.reset()
 
     def episode_reset(self) -> None:
+        """Reset state before the next episode starts."""
         self.reset()
 
     # ── Rendering and diagnostics ─────────────────────────────────────────────

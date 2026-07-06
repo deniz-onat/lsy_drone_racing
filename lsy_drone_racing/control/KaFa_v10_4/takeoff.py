@@ -26,8 +26,8 @@ from lsy_drone_racing.control.KaFa_v8.takeoff import TakeoffPhase as _TakeoffPha
 
 if TYPE_CHECKING:
     from lsy_drone_racing.control.kafa1500_v6.state import DroneObservation
-    from lsy_drone_racing.control.KaFa_v10_4.settings import LaunchTakeoffSettings
     from lsy_drone_racing.control.KaFa_v8.settings import ControllerSettings
+    from lsy_drone_racing.control.KaFa_v10_4.settings import LaunchTakeoffSettings
 
 
 class TakeoffPhase(_TakeoffPhase):

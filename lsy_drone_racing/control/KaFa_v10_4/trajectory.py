@@ -33,13 +33,8 @@ from lsy_drone_racing.control.kafa1500_v6.avoidance import (
     reversal_turn,
 )
 from lsy_drone_racing.control.KaFa_v8.timing import repair_obstacles
-from lsy_drone_racing.control.KaFa_v8.trajectory import (
-    ReferenceManager as _ReferenceManager,
-)
-from lsy_drone_racing.control.KaFa_v8.trajectory import (
-    ReferencePlan,
-    _oriented_forward,
-)
+from lsy_drone_racing.control.KaFa_v8.trajectory import ReferenceManager as _ReferenceManager
+from lsy_drone_racing.control.KaFa_v8.trajectory import ReferencePlan, _oriented_forward
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray

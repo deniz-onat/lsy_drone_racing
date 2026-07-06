@@ -11,12 +11,7 @@ v10.1's pure geometric anchor. See KaFa_1500_v10_2 for the full rationale.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from lsy_drone_racing.control.KaFa_v10_1.mpcc import MPCC as _MPCC
-
-if TYPE_CHECKING:
-    pass
 
 __all__ = ["MPCC"]
 

@@ -1,4 +1,4 @@
-"""Tunnel-constrained time-optimal MPCC core for KaFa_1500_v11 (acados SQP-RTI).
+"""Tunnel-constrained time-optimal MPCC core for KaFa_1500_v12 (acados SQP-RTI).
 
 The OCP is v10.1's time-optimal contouring formulation with TWO additions (the MPCC++ move,
 Krinner et al. RSS 2024 -- see the cockpit for why):
@@ -14,7 +14,7 @@ The contouring weight stays a per-stage parameter but arrives as a low constant 
 -MU*vth then sets the pace against the tunnel walls. The solve/rebase/cold-start flow is the
 v10.1 + v10.3 + v10.4 + v10.5 machinery copied with the parameter packing extended (the house
 pattern; the parameter count changes, so every sv.set(k, "p", ...) site must change with it).
-Own codegen namespace ``kafa_v11`` (different dimensions than v10.x -- never share; see the
+Own codegen namespace ``kafa_v12`` (different dimensions than v10.x -- never share; see the
 v10.4 dlopen segfault note). REQUIRES the acados environment -- run under ``pixi run``.
 """
 
@@ -41,7 +41,7 @@ _SOLVER_CACHE: dict[tuple, AcadosOcpSolver] = {}
 
 
 def _build_v11_solver(s: MPCCSettings, a_max: float) -> AcadosOcpSolver:
-    """Code-generate the v10.1 OCP plus the soft tunnel constraints (kafa_v11 namespace)."""
+    """Code-generate the v10.1 OCP plus the soft tunnel constraints (kafa_v12 namespace)."""
     n, dt, g = int(s.horizon), float(s.step_dt), float(s.gravity)
     x, u, p = ca.SX.sym("x", _NX), ca.SX.sym("u", _NU), ca.SX.sym("p", _NP)
     pos, vel, th, vth = x[0:3], x[3:6], x[6], x[7]

@@ -9,13 +9,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from lsy_drone_racing.control.KaFa_v8.settings import PlannerSettings as _V8PlannerSettings
+from lsy_drone_racing.control.KaFa_v8.settings import TakeoffSettings as _V8TakeoffSettings
 from lsy_drone_racing.control.KaFa_v10_3.settings import (
     ControllerSettings as _V103ControllerSettings,
 )
 from lsy_drone_racing.control.KaFa_v10_3.settings import MPCCSettings as _V103MPCCSettings
 from lsy_drone_racing.control.KaFa_v10_4 import cockpit as cp
-from lsy_drone_racing.control.KaFa_v8.settings import PlannerSettings as _V8PlannerSettings
-from lsy_drone_racing.control.KaFa_v8.settings import TakeoffSettings as _V8TakeoffSettings
 
 
 @dataclass(frozen=True)

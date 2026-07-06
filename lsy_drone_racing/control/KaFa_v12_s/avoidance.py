@@ -1,4 +1,4 @@
-"""Obstacle-aware waypoint and timing helpers for KaFa_1500_v6.
+"""Obstacle-aware waypoint and timing helpers for KaFa_1500_v12_s.
 
 All helpers operate purely on observed obstacle positions, keeping the path clear in
 the XY plane (obstacles are vertical cylinders).

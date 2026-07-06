@@ -1,4 +1,4 @@
-"""Track and quaternion math for KaFa_1500_v6."""
+"""Track and quaternion math for KaFa_1500_v12."""
 # ruff: noqa: TC002
 
 from __future__ import annotations
