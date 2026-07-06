@@ -110,6 +110,7 @@ class KaFa1500V13(Controller):
 
         # In-sim obstacle overlay state (render only).
         self._dbg_obs_pos = np.empty((0, 3), dtype=np.float64)
+        self._dbg_gate_pos = np.empty((0, 3), dtype=np.float64)  # revealed (sensed) gate positions
         self._r_obs = float(getattr(self._references._settings, "r_obs", 0.20))
         self._nominal_obs_pos = (
             np.asarray(obs.get("obstacles_pos", []), dtype=np.float64).reshape(-1, 3).copy()
@@ -220,11 +221,15 @@ class KaFa1500V13(Controller):
         truncated: bool,
         info: dict,
     ) -> bool:
-        """Advance the controller clock and latch sensor-confirmed obstacle positions for render."""
+        """Advance the controller clock and latch sensed obstacle/gate positions for render."""
         obs_pos = np.asarray(obs.get("obstacles_pos", []), dtype=np.float64).reshape(-1, 3)
         visited = np.asarray(obs.get("obstacles_visited", []), dtype=bool).reshape(-1)
         if visited.any() and len(visited) <= len(obs_pos):
             self._dbg_obs_pos = obs_pos[: len(visited)][visited].copy()
+        gate_pos = np.asarray(obs.get("gates_pos", []), dtype=np.float64).reshape(-1, 3)
+        gate_vis = np.asarray(obs.get("gates_visited", []), dtype=bool).reshape(-1)
+        if gate_vis.any() and len(gate_vis) <= len(gate_pos):
+            self._dbg_gate_pos = gate_pos[: len(gate_vis)][gate_vis].copy()
         self._tick += 1
         return self._finished
 
@@ -244,6 +249,7 @@ class KaFa1500V13(Controller):
         self._path = None
         self._s = 0.0
         self._dbg_obs_pos = np.empty((0, 3), dtype=np.float64)
+        self._dbg_gate_pos = np.empty((0, 3), dtype=np.float64)
         self._gate_nominal = None
         self._reset_anchor_telemetry()
 
@@ -256,7 +262,13 @@ class KaFa1500V13(Controller):
         self.reset()
 
     def render_callback(self, sim: Sim) -> None:
-        """Draw the active path (green), planner/obstacle overlays, and the MPCC horizon (cyan)."""
+        """Draw the search sweep (yellow), navigate path (green), overlays, and MPCC horizon."""
+        # Yellow line: the SEARCH-phase lawnmower sweep spline.
+        if self._mode == self._MODE_SEARCH:
+            sweep = self._search.sampled_path()
+            if sweep is not None:
+                draw_line(sim, sweep.astype(np.float32), rgba=(1.0, 1.0, 0.0, 1.0))
+
         plan = self._references.plan
         if plan is not None and self._mode == self._MODE_NAVIGATE:
             samples = plan.curve(np.linspace(0.0, plan.t_total, 100))
@@ -279,6 +291,10 @@ class KaFa1500V13(Controller):
         if plan is not None and self._mode == self._MODE_NAVIGATE:
             for wp in np.asarray(plan.waypoints, dtype=np.float64).reshape(-1, 3):
                 _cross(wp, rgba=(0.2, 0.4, 1.0, 1.0), arm=0.05)
+
+        # Small magenta crosses at the revealed (sensor-confirmed) gate positions.
+        for gp in self._dbg_gate_pos:
+            _cross(gp, rgba=(1.0, 0.0, 1.0, 1.0), arm=0.10)
 
         # Red crosses + orange keep-out rings at the detected (sensor-confirmed) obstacles.
         angles = np.linspace(0.0, 2.0 * np.pi, 32)

@@ -155,10 +155,10 @@ class SearchSettings:
     # top) yet stay under the z=2.0 safety ceiling once the tracking spline's overshoot is added.
     # The usable band is narrow (~[1.66, 2.0]); 1.80 sits mid-band. Calibrate per real ceiling.
     alt: float = 1.80
-    speed: float = 1.8  # sweep ground speed [m/s]
+    speed: float = 1.8  # sweep ground speed [m/s] (corner accel is clipped by attitude_action)
     x_span: float = 2.5  # sweep reaches +/- x_span in x (placement region half-width; < 3.0 limit)
-    # Sweep-row y-values. Spacing (~0.87 m) < 2*sensor_range so consecutive rows overlap in cover.
-    rows: tuple[float, ...] = (-1.3, -0.43, 0.43, 1.3)
+    # Sweep-row y-values. Spacing (~1.2 m) < 2*sensor_range so consecutive rows overlap in cover.
+    rows: tuple[float, ...] = (-1.2, 0.0, 1.2)
     dens: int = 8  # knots per sweep row (denser -> spline hugs the straight line, no corner gaps)
     climb_time: float = 1.2  # time [s] to ease up to alt before sweeping
     dwell_time: float = 0.6  # hover dwell at alt after the climb -> ~0 vertical vel, kills z bow
