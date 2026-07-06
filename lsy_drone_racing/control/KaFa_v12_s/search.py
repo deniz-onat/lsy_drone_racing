@@ -1,18 +1,20 @@
-"""Gate-search sweep phase for the KaFa_1500_v13 controller (new in v13).
+"""Gate-search sweep phase for the KaFa_1500_v12_s controller (new in v12_s).
 
 Level 3 fully randomizes the gate/obstacle layout, so the nominal positions the observation
 reports out of sensor range are useless. Before it can navigate, the drone has to *find* the
 gates. Detection is by XY-proximity: any gate whose XY the drone comes within ``sensor_range`` of
-is revealed permanently (``gates_visited``). This phase flies a boustrophedon ("lawnmower") sweep
-that brings the drone within ``sensor_range`` of every point of the gate placement region, at an
-altitude above every obstacle and gate so the blind sweep can't hit anything it hasn't sensed yet.
+is revealed permanently (``gates_visited``). This phase flies an inward elliptical spiral (radius
+shrinking from the arena edge to the centre) at an altitude above every obstacle and gate so the
+blind sweep can't hit anything it hasn't sensed yet.
+
+A looping path can't reach the rectangular arena corners, so the spiral leaves ~1.1 m gaps there;
+corner gates are picked up instead by NAVIGATE's en-route sensing (it replans on every reveal).
 
 The sweep is one cubic-spline reference tracked with the same ``attitude_action`` + cascaded-PID
-machinery the takeoff climb uses -- no new tracking stack. It exits early the moment every gate is
-visited; otherwise it runs to the end of the planned path (plus a short grace) and hands off to
-NAVIGATE, which reveals any straggler gate en route via its existing replanning.
+machinery the takeoff climb uses -- no new tracking stack. It exits early the moment every gate and
+obstacle is visited; otherwise it runs to the end of the planned path (plus a short grace).
 
-Run ``python -m lsy_drone_racing.control.KaFa_v13.search`` for the coverage/safety self-check.
+Run ``python -m lsy_drone_racing.control.KaFa_v12_s.search`` for the coverage/safety self-check.
 """
 
 from __future__ import annotations
@@ -22,29 +24,29 @@ from typing import TYPE_CHECKING
 import numpy as np
 from scipy.interpolate import CubicSpline
 
-from lsy_drone_racing.control.KaFa_v13.attitude import attitude_action
+from lsy_drone_racing.control.KaFa_v12_s.attitude import attitude_action
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
-    from lsy_drone_racing.control.KaFa_v13.feedback import CascadedPid
-    from lsy_drone_racing.control.KaFa_v13.observation import DroneObservation
-    from lsy_drone_racing.control.KaFa_v13.settings import ControllerSettings, SearchSettings
+    from lsy_drone_racing.control.KaFa_v12_s.feedback import CascadedPid
+    from lsy_drone_racing.control.KaFa_v12_s.observation import DroneObservation
+    from lsy_drone_racing.control.KaFa_v12_s.settings import ControllerSettings, SearchSettings
 
 
 def build_sweep_path(
     start: NDArray[np.float64], search: SearchSettings
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Return ``(waypoints, knot_times)`` for the eased-climb + lawnmower sweep from ``start``.
+    """Return ``(waypoints, knot_times)`` for the eased-climb + inward-spiral sweep from ``start``.
 
     Pure geometry (no controller state) so the ``__main__`` self-check can verify the resulting
-    spline covers the placement region and stays inside the safety box. Layout:
+    spline stays inside the safety box. Layout:
 
     * an eased vertical climb from ``start`` to ``search.alt`` (two knots), then a short hover
       dwell so the spline reaches altitude with ~zero vertical velocity (kills the cubic z-bow
       that would otherwise punch through the ceiling),
-    * boustrophedon rows across ``x in [-x_span, x_span]`` at each ``search.rows`` height,
-      alternating direction, ``search.dens`` knots per row so the spline hugs the straight line.
+    * an inward elliptical spiral: ``n_loops`` turns whose semi-axes shrink from
+      ``(a_max, b_max)`` at the arena edge to ``inner_frac`` of that at the centre.
     """
     x0, y0, z0 = (float(v) for v in start)
     alt = search.alt
@@ -55,12 +57,22 @@ def build_sweep_path(
         [x0, y0, alt],  # dwell endpoint (same point, dt=dwell_time) -> flat arrival
     ]
     seg_t: list[float] = [search.climb_time * 0.6, search.climb_time * 0.4, search.dwell_time]
-    for i, y in enumerate(search.rows):
-        xa, xb = (-search.x_span, search.x_span) if i % 2 == 0 else (search.x_span, -search.x_span)
-        for x in np.linspace(xa, xb, search.dens):
-            wp.append([float(x), float(y), alt])
 
-    waypoints = np.asarray(wp, dtype=np.float64)
+    theta = np.linspace(0.0, 2.0 * np.pi * search.n_loops, search.n_samples)
+    frac = theta / theta[-1]
+    # Radial scale along the spiral. outward=True -> grow inner_frac..1 (centre to edge);
+    # else shrink 1..inner_frac (edge to centre).
+    if getattr(search, "outward", False):
+        scale = search.inner_frac + frac * (1.0 - search.inner_frac)
+    else:
+        scale = 1.0 - frac * (1.0 - search.inner_frac)
+    spiral = np.column_stack([
+        search.a_max * scale * np.cos(theta),
+        search.b_max * scale * np.sin(theta),
+        np.full(theta.shape, alt),
+    ])
+
+    waypoints = np.vstack([np.asarray(wp, dtype=np.float64), spiral])
     # Times for the sweep segments (everything after the fixed climb/dwell) from distance/speed.
     dist = np.linalg.norm(np.diff(waypoints[3:], axis=0), axis=1)
     sweep_t = np.maximum(dist / max(search.speed, 1e-3), 1e-3)
@@ -149,8 +161,8 @@ class SearchPhase:
 
 
 def _self_check() -> None:
-    """Assert the sweep spline covers the gate placement region and stays inside the safety box."""
-    from lsy_drone_racing.control.KaFa_v13.settings import SearchSettings
+    """Assert the spiral stays inside the safety box; report its (partial) placement coverage."""
+    from lsy_drone_racing.control.KaFa_v12_s.settings import SearchSettings
 
     search = SearchSettings()
     sensor_range = 0.7  # env sensor_range; gates reveal within this XY distance
@@ -163,18 +175,17 @@ def _self_check() -> None:
         wp, t = build_sweep_path(np.asarray(start), search)
         curve = CubicSpline(t, wp, bc_type=((1, np.zeros(3)), (1, np.zeros(3))))
         pos = curve(np.linspace(0.0, t[-1], 8000))
-        # Safety box: hard limits are +/-3 (x), +/-2 (y), 2.0 (z); require a margin.
+        # Safety box (hard): sim disables outside +/-3 (x,y), z>2.5; keep a margin to config's 2.0.
         assert np.abs(pos[:, 0]).max() < 2.9, f"x overshoot {np.abs(pos[:,0]).max():.2f}"
         assert np.abs(pos[:, 1]).max() < 1.9, f"y overshoot {np.abs(pos[:,1]).max():.2f}"
         assert pos[:, 2].max() < 1.97, f"z ceiling breach {pos[:,2].max():.2f}"
-        # Every placement point must be within sensor_range of the (perfectly-tracked) sweep path.
         gap = np.sqrt(((region[:, None, :] - pos[None, :, :2]) ** 2).sum(-1)).min(1).max()
         worst_cover = max(worst_cover, gap)
-    # Geometric coverage bound: the reference path reaches within sensor_range (minus a small
-    # margin) of every placement point. The residual tracking budget is validated in sim -- the
-    # 3-row @1.8 config reveals all gates in 15/15 nav-reaching level3 episodes at 0.63 worst.
-    assert worst_cover < sensor_range - 0.05, f"coverage gap {worst_cover:.2f} too tight"
-    print(f"search self-check OK: worst coverage gap {worst_cover:.2f} m (< {sensor_range} sensor)")
+    # The spiral intentionally does NOT fully cover the rectangular region (corners are ~1.1 m out
+    # of reach for a looping path); NAVIGATE reveals those en route. This is reported, not asserted.
+    note = "corners rely on navigate" if worst_cover > sensor_range else "full coverage"
+    print(f"search self-check OK: safety box respected; worst coverage gap {worst_cover:.2f} m "
+          f"(sensor {sensor_range}, {note})")
 
 
 if __name__ == "__main__":

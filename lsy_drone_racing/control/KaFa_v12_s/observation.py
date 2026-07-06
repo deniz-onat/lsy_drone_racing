@@ -20,8 +20,8 @@ class DroneObservation:
     pos: NDArray[np.float64]
     vel: NDArray[np.float64]
     quat: NDArray[np.float64]
-    gates_visited: NDArray[np.bool_]  # per-gate: ever within sensor range (v13 search)
-    obstacles_visited: NDArray[np.bool_]  # per-obstacle: ever within sensor range (v13 search)
+    gates_visited: NDArray[np.bool_]  # per-gate: ever within sensor range (v12_s search)
+    obstacles_visited: NDArray[np.bool_]  # per-obstacle: ever within sensor range (v12_s search)
 
 
 def scalar_gate_index(value: object) -> int:

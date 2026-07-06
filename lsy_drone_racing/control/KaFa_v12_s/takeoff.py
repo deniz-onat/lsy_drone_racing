@@ -1,4 +1,4 @@
-"""Consolidated takeoff-phase chain for the KaFa_v13 controller.
+"""Consolidated takeoff-phase chain for the KaFa_v12_s controller.
 
 This module merges the single-inheritance takeoff chain into one file, preserving the
 original base->derived method resolution order:
@@ -23,14 +23,14 @@ from typing import TYPE_CHECKING
 import numpy as np
 from scipy.interpolate import CubicSpline
 
-from lsy_drone_racing.control.KaFa_v13.attitude import attitude_action
+from lsy_drone_racing.control.KaFa_v12_s.attitude import attitude_action
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
-    from lsy_drone_racing.control.KaFa_v13.feedback import CascadedPid
-    from lsy_drone_racing.control.KaFa_v13.observation import DroneObservation
-    from lsy_drone_racing.control.KaFa_v13.settings import (
+    from lsy_drone_racing.control.KaFa_v12_s.feedback import CascadedPid
+    from lsy_drone_racing.control.KaFa_v12_s.observation import DroneObservation
+    from lsy_drone_racing.control.KaFa_v12_s.settings import (
         ControllerSettings,
         LaunchTakeoffSettings,
         TakeoffSettings,

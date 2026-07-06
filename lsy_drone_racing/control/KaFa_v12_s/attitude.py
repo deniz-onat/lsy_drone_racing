@@ -9,10 +9,10 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.spatial.transform import Rotation
 
-from lsy_drone_racing.control.KaFa_v13.feedback import CascadedPid
-from lsy_drone_racing.control.KaFa_v13.geometry import body_z_from_quat
-from lsy_drone_racing.control.KaFa_v13.planner import ReferenceCurve
-from lsy_drone_racing.control.KaFa_v13.settings import CommandSettings
+from lsy_drone_racing.control.KaFa_v12_s.feedback import CascadedPid
+from lsy_drone_racing.control.KaFa_v12_s.geometry import body_z_from_quat
+from lsy_drone_racing.control.KaFa_v12_s.planner import ReferenceCurve
+from lsy_drone_racing.control.KaFa_v12_s.settings import CommandSettings
 
 
 @dataclass(frozen=True)

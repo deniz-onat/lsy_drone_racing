@@ -1,4 +1,4 @@
-"""Consolidated arc-length path / tunnel chain for KaFa_v13 (resolved-base merge).
+"""Consolidated arc-length path / tunnel chain for KaFa_v12_s (resolved-base merge).
 
 This module flattens the single-inheritance arc-length path chain that was spread across the
 KaFa_v10 -> KaFa_v10_1 -> KaFa_v10_3 -> KaFa_v10_4 -> KaFa_v10_5 -> KaFa_v11 -> KaFa_v11_1
@@ -21,13 +21,13 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from lsy_drone_racing.control.KaFa_v13.speed_profile import SpeedProfile
+from lsy_drone_racing.control.KaFa_v12_s.speed_profile import SpeedProfile
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
     from scipy.interpolate import CubicSpline
 
-    from lsy_drone_racing.control.KaFa_v13.settings import MPCCSettings
+    from lsy_drone_racing.control.KaFa_v12_s.settings import MPCCSettings
 
 _EPS = 1e-9
 _PROJ_WINDOW_M = 2.0  # forward window (m) for the projection search

@@ -1,6 +1,6 @@
-"""Self-contained controller package for KaFa_1500_v13.
+"""Self-contained controller package for KaFa_1500_v12_s.
 
-v13 is a standalone clone of the KaFa_1500_v12 package (the v11 tunnel-constrained MPCC flying
+v12_s is a standalone clone of the KaFa_1500_v12 package (the v11 tunnel-constrained MPCC flying
 v10.6's guarded-smoothed, parity-capped reference) with one addition: a level-3 gate-search sweep
 (``search.py``) flown between takeoff and navigation. All code, parameters, and settings it needs
 live in this package; it imports nothing from any other ``KaFa_*`` version and keeps working if

@@ -1,4 +1,4 @@
-"""Reference planning for KaFa_1500_v13: guarded-smoothed, parity-capped global spline.
+"""Reference planning for KaFa_1500_v12_s: guarded-smoothed, parity-capped global spline.
 
 Consolidates v11_1's reference-planning stack into one module:
 
@@ -24,18 +24,18 @@ import numpy as np
 from scipy.interpolate import CubicSpline
 from scipy.spatial.transform import Rotation
 
-from lsy_drone_racing.control.KaFa_v13.avoidance import (
+from lsy_drone_racing.control.KaFa_v12_s.avoidance import (
     nudge_lateral,
     push_off_obstacles,
     reversal_turn,
 )
-from lsy_drone_racing.control.KaFa_v13.speed_profile import SpeedProfile
+from lsy_drone_racing.control.KaFa_v12_s.speed_profile import SpeedProfile
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
-    from lsy_drone_racing.control.KaFa_v13.observation import DroneObservation
-    from lsy_drone_racing.control.KaFa_v13.settings import PlannerSettings, SmoothPlannerSettings
+    from lsy_drone_racing.control.KaFa_v12_s.observation import DroneObservation
+    from lsy_drone_racing.control.KaFa_v12_s.settings import PlannerSettings, SmoothPlannerSettings
 
 ReferenceCurve = CubicSpline
 

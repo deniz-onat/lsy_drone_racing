@@ -8,7 +8,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from lsy_drone_racing.control.KaFa_v13.settings import FeedbackProfile, FeedbackSettings
+from lsy_drone_racing.control.KaFa_v12_s.settings import FeedbackProfile, FeedbackSettings
 
 
 @dataclass(frozen=True)

@@ -1,19 +1,19 @@
-"""KaFa_1500_v13 — v12 tunnel-MPCC racing controller + a level-3 gate-search phase.
+"""KaFa_1500_v12_s — v12 tunnel-MPCC racing controller + a level-3 gate-search phase.
 
 A standalone clone of KaFa_1500_v12 (the v11 tunnel-constrained, de-paced time-optimal MPCC flying
 v10.6's guarded-smoothed reference) extended for level 3, where the whole gate/obstacle layout is
-randomized and the nominal positions the observation reports out of sensor range are useless. v13
+randomized and the nominal positions the observation reports out of sensor range are useless. v12_s
 inserts a SEARCH phase that flies a lawnmower sweep over the arena to reveal the gates before
-navigating. Everything it needs lives in ``KaFa_v13``; it imports nothing from any other version.
+navigating. Everything it needs lives in ``KaFa_v12_s``; it imports nothing from any other version.
 
 Phase machine:
 
     TAKEOFF  -> mini vertical climb (PID-tracked), holding XY inside the floor-touch carve-out
-    SEARCH   -> lawnmower sweep above all obstacles (KaFa_v13.search), PID-tracked, until every
-                gate has been sensed (or the sweep path runs out). New in v13; a no-op for levels
+    SEARCH   -> lawnmower sweep above all obstacles (KaFa_v12_s.search), PID-tracked, until every
+                gate has been sensed (or the sweep path runs out). New in v12_s; a no-op for levels
                 where gates start visible near their nominal spots.
-    NAVIGATE -> guarded-smoothed global spline (KaFa_v13.planner), flown by the tunnel MPCC
-                (KaFa_v13.mpcc) over the capped tunnel path view (KaFa_v13.arc_path), with a
+    NAVIGATE -> guarded-smoothed global spline (KaFa_v12_s.planner), flown by the tunnel MPCC
+                (KaFa_v12_s.mpcc) over the capped tunnel path view (KaFa_v12_s.arc_path), with a
                 fast launch ramp and v10.2's dynamics-aware predicted-progress anchor. Unchanged
                 from v12: by the time it starts, the revealed gate positions are already in the
                 observation, so the planner builds the correct spline exactly as it does on a
@@ -32,24 +32,24 @@ from crazyflow.sim.visualize import draw_line
 from drone_models.core import load_params
 
 from lsy_drone_racing.control import Controller
-from lsy_drone_racing.control.KaFa_v13.arc_path import CappedTunnelArcPath
-from lsy_drone_racing.control.KaFa_v13.attitude import _vector_to_attitude
-from lsy_drone_racing.control.KaFa_v13.feedback import CascadedPid
-from lsy_drone_racing.control.KaFa_v13.mpcc import MPCC
-from lsy_drone_racing.control.KaFa_v13.observation import parse_observation
-from lsy_drone_racing.control.KaFa_v13.planner import ReferenceManager, gate_post_obstacles
-from lsy_drone_racing.control.KaFa_v13.search import SearchPhase
-from lsy_drone_racing.control.KaFa_v13.settings import ControllerSettings
-from lsy_drone_racing.control.KaFa_v13.takeoff import TakeoffPhase
+from lsy_drone_racing.control.KaFa_v12_s.arc_path import CappedTunnelArcPath
+from lsy_drone_racing.control.KaFa_v12_s.attitude import _vector_to_attitude
+from lsy_drone_racing.control.KaFa_v12_s.feedback import CascadedPid
+from lsy_drone_racing.control.KaFa_v12_s.mpcc import MPCC
+from lsy_drone_racing.control.KaFa_v12_s.observation import parse_observation
+from lsy_drone_racing.control.KaFa_v12_s.planner import ReferenceManager, gate_post_obstacles
+from lsy_drone_racing.control.KaFa_v12_s.search import SearchPhase
+from lsy_drone_racing.control.KaFa_v12_s.settings import ControllerSettings
+from lsy_drone_racing.control.KaFa_v12_s.takeoff import TakeoffPhase
 
 if TYPE_CHECKING:
     from crazyflow import Sim
     from numpy.typing import NDArray
 
-    from lsy_drone_racing.control.KaFa_v13.observation import DroneObservation
+    from lsy_drone_racing.control.KaFa_v12_s.observation import DroneObservation
 
 
-class KaFa1500V13(Controller):
+class KaFa1500V12S(Controller):
     """v12 tunnel MPCC over the guarded-smoothed reference, with a level-3 gate-search sweep."""
 
     _MODE_TAKEOFF = "TAKEOFF"
@@ -60,7 +60,7 @@ class KaFa1500V13(Controller):
         """Build the planner, takeoff/search phases, and the v11 tunnel MPCC (the only solver)."""
         super().__init__(obs, info, config)
         if config.env.control_mode != "attitude":
-            raise ValueError("KaFa_1500_v13 requires env.control_mode = 'attitude'.")
+            raise ValueError("KaFa_1500_v12_s requires env.control_mode = 'attitude'.")
         self._settings = ControllerSettings()
         self._freq = float(config.env.freq)
         self._dt = 1.0 / self._freq
@@ -91,7 +91,7 @@ class KaFa1500V13(Controller):
         self._takeoff = TakeoffPhase(self._settings, self._settings.takeoff)
         self._search = SearchPhase(self._settings, self._settings.search)
 
-        # The one MPCC actually flown: v11's tunnel-constrained OCP (codegen namespace kafa_v13).
+        # The one MPCC actually flown: v11's tunnel-constrained OCP (codegen namespace kafa_v12_s).
         a_max = self._command.thrust_max / self._mass
         self._mpcc = MPCC(self._settings.mpcc, a_max)
 

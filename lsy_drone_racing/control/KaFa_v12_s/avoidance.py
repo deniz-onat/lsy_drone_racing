@@ -13,7 +13,7 @@ import numpy as np
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
-    from lsy_drone_racing.control.KaFa_v13.settings import PlannerSettings
+    from lsy_drone_racing.control.KaFa_v12_s.settings import PlannerSettings
 
 
 def nudge_lateral(

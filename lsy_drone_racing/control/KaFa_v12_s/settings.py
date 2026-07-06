@@ -1,4 +1,4 @@
-"""Tuning surface for KaFa_1500_v13 — the single place all parameters live.
+"""Tuning surface for KaFa_1500_v12_s — the single place all parameters live.
 
 These dataclasses are the fully *resolved* settings that KaFa_1500_v11_1 builds at runtime: the
 original used a deep chain of cockpit ``import *`` constant modules and dataclass inheritance
@@ -139,27 +139,35 @@ LaunchTakeoffSettings = TakeoffSettings
 
 @dataclass(frozen=True)
 class SearchSettings:
-    """Level-3 gate-search sweep (new in v13).
+    """Level-3 gate-search sweep (new in v12_s).
 
-    Between takeoff and navigation the drone flies a boustrophedon ("lawnmower") sweep over the
-    arena at a fixed altitude *above every obstacle and gate*, so the blind search cannot collide
-    with anything it has not yet sensed. Gates/obstacles reveal by XY-proximity (sensor_range), so
-    the sweep only needs to bring the drone within sensor_range of every point of the gate
-    placement region; height is chosen purely for clearance.
+    Between takeoff and navigation the drone flies an inward elliptical spiral (radius shrinking
+    from the arena edge to the centre) at a fixed altitude *above every obstacle and gate*, so the
+    blind search cannot collide with anything it has not yet sensed. Gates/obstacles reveal by
+    XY-proximity (sensor_range); height is chosen purely for clearance.
 
-    Geometry is verified by ``search.py``'s ``__main__`` self-check: the sampled reference path
-    covers the whole placement region within ``sensor_range`` and stays inside the safety box.
+    NOTE: a looping (elliptical) path geometrically cannot reach the rectangular arena corners, so
+    the spiral leaves ~1.1 m coverage gaps there -- corner gates are not guaranteed to be found by
+    the sweep and are instead revealed by NAVIGATE's en-route sensing. The lawnmower sweep (git
+    history) covered fully; this spiral trades that for the requested circular motion.
+
+    ``search.py``'s ``__main__`` self-check asserts the path stays inside the safety box and reports
+    the (intentionally partial) coverage gap.
     """
 
     # Search altitude [m]. Must clear the tallest obstruction (~1.66 m: a +z-randomized tall gate
     # top) yet stay under the z=2.0 safety ceiling once the tracking spline's overshoot is added.
     # The usable band is narrow (~[1.66, 2.0]); 1.80 sits mid-band. Calibrate per real ceiling.
     alt: float = 1.80
-    speed: float = 1.8  # sweep ground speed [m/s] (corner accel is clipped by attitude_action)
-    x_span: float = 2.5  # sweep reaches +/- x_span in x (placement region half-width; < 3.0 limit)
-    # Sweep-row y-values. Spacing (~1.2 m) < 2*sensor_range so consecutive rows overlap in cover.
-    rows: tuple[float, ...] = (-1.2, 0.0, 1.2)
-    dens: int = 8  # knots per sweep row (denser -> spline hugs the straight line, no corner gaps)
+    speed: float = 1.8  # sweep ground speed [m/s]
+    # Outer elliptical semi-axes [m] (start of the inward spiral). Sized to the placement region
+    # (x within +/-2.5, y within +/-1.5) while staying clear of the safety box.
+    a_max: float = 2.5
+    b_max: float = 1.5
+    n_loops: int = 2  # full turns edge<->centre (radial pitch a_max/n_loops = 1.25 m < 1.4)
+    outward: bool = False  # False: spiral edge->centre; True: centre->edge (inner to outer)
+    inner_frac: float = 0.30  # innermost radius as fraction of a_max/b_max (avoids a 0-radius cusp)
+    n_samples: int = 500  # spiral discretisation (knots for the tracking spline)
     climb_time: float = 1.2  # time [s] to ease up to alt before sweeping
     dwell_time: float = 0.6  # hover dwell at alt after the climb -> ~0 vertical vel, kills z bow
     max_extra_time: float = 3.0  # grace [s] past the planned path end before forcing NAVIGATE
@@ -169,7 +177,7 @@ class SearchSettings:
 class MPCCSettings:
     """Tunnel-constrained time-optimal MPCC settings (resolved v11 values).
 
-    The OCP solved by KaFa_v13.mpcc; also read by KaFa_v13.arc_path for the path/tunnel view.
+    The OCP solved by KaFa_v12_s.mpcc; also read by KaFa_v12_s.arc_path for the path/tunnel view.
     """
 
     horizon: int = 18
@@ -222,7 +230,7 @@ class MPCCSettings:
 
 @dataclass(frozen=True)
 class ControllerSettings:
-    """All configurable values used by KaFa_1500_v13 (resolved v11_1 settings tree)."""
+    """All configurable values used by KaFa_1500_v12_s (resolved v11_1 settings tree)."""
 
     planner: PlannerSettings = field(default_factory=PlannerSettings)
     feedback: FeedbackSettings = field(default_factory=FeedbackSettings)

@@ -29,8 +29,8 @@ from acados_template import AcadosModel, AcadosOcp, AcadosOcpSolver
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
-    from lsy_drone_racing.control.KaFa_v13.arc_path import TunnelArcPath
-    from lsy_drone_racing.control.KaFa_v13.settings import MPCCSettings
+    from lsy_drone_racing.control.KaFa_v12_s.arc_path import TunnelArcPath
+    from lsy_drone_racing.control.KaFa_v12_s.settings import MPCCSettings
 
 __all__ = ["MPCC"]
 
@@ -50,7 +50,7 @@ def _build_v11_solver(s: MPCCSettings, a_max: float) -> AcadosOcpSolver:
     n_lat, w_half, h_half = p[9:12], p[12], p[13]
 
     model = AcadosModel()
-    model.name = "kafa_v13_tunnel"
+    model.name = "kafa_v12_s_tunnel"
     model.x, model.u, model.p = x, u, p
     model.f_expl_expr = ca.vertcat(vel, acc, vth, dvth)
     model.xdot = ca.SX.sym("xdot", _NX)
@@ -106,7 +106,7 @@ def _build_v11_solver(s: MPCCSettings, a_max: float) -> AcadosOcpSolver:
     ocp.solver_options.hessian_approx = "EXACT"
     ocp.solver_options.regularize_method = "CONVEXIFY"
     ocp.solver_options.qp_solver_iter_max = int(s.max_iter)
-    return AcadosOcpSolver(ocp, json_file="c_generated_code/kafa_v13.json", verbose=False)
+    return AcadosOcpSolver(ocp, json_file="c_generated_code/kafa_v12_s.json", verbose=False)
 
 
 class MPCC:
